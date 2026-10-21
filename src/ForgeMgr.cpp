@@ -1292,6 +1292,50 @@ uint32 ForgeMgr::Generate(ItemTemplate const* base, uint8 itemLevel, bool force,
     return entry;
 }
 
+bool ForgeMgr::Reroll(uint32 entry)
+{
+    GeneratedItem const* current = GetGenerated(entry);
+    if (!current || current->Preview)
+        return false;
+    ItemTemplate const* base = sObjectMgr->GetItemTemplate(current->BaseEntry);
+    if (!base)
+        return false;
+
+    std::unique_lock lock(_lock);
+    auto itr = _generated.find(entry);
+    ItemAffixPool* pool = FindPool(entry);
+    if (itr == _generated.end() || itr->second->Preview || !pool)
+        return false;
+    GeneratedItem& item = *itr->second;
+    uint8 quality = item.Quality < MAX_ITEM_QUALITY ? item.Quality : uint8(std::min<uint32>(base->Quality, ITEM_QUALITY_LEGENDARY));
+    std::vector<ItemAffixRoll> rolls;
+    for (uint32 tries = 0; tries < 10 && rolls.empty(); ++tries)
+        rolls = Roll(base, item.ItemLevel, 0, 0, quality);
+    if (rolls.empty())
+        return false;
+
+    item.Quality = quality;
+    item.Rolls = std::move(rolls);
+    // Keep the old template like a recycled one: pointers to it may still be held
+    _retired.push_back(std::move(item.Template));
+    item.Template = BuildTemplate(entry, *base, item.ItemLevel, item.Rolls, pool->DisplayId, quality);
+    SaveGenerated(item, *pool);
+    return true;
+}
+
+bool ForgeMgr::RerollItem(Player* player, Item* item)
+{
+    bool equipped = item->IsEquipped();
+    if (equipped)
+        player->_ApplyItemMods(item, item->GetSlot(), false);
+    bool rerolled = Reroll(item->GetEntry());
+    if (equipped)
+        player->_ApplyItemMods(item, item->GetSlot(), true);
+    if (rerolled)
+        SendTemplate(player, item->GetEntry());
+    return rerolled;
+}
+
 uint32 ForgeMgr::CreatePreview(ItemTemplate const* base, uint8 itemLevel, std::string const& note)
 {
     if (!_enabled || !base || !GetItemMask(base))

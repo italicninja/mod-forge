@@ -27,6 +27,7 @@ public:
             { "legendary", HandleAffixLegendaryCommand, rbac::RBAC_PERM_COMMAND_ADDITEM, Console::No },
             { "unique",    HandleAffixUniqueCommand,    rbac::RBAC_PERM_COMMAND_ADDITEM, Console::No },
             { "info",      HandleAffixInfoCommand,      rbac::RBAC_PERM_COMMAND_ADDITEM, Console::Yes },
+            { "reroll",    HandleAffixRerollCommand,    rbac::RBAC_PERM_COMMAND_ADDITEM, Console::No },
         };
         static ChatCommandTable commandTable =
         {
@@ -123,6 +124,27 @@ public:
             return false;
         }
         return GiveItem(handler, handler->GetSession()->GetPlayer(), unique->Entry);
+    }
+
+    // .forge reroll <entry>: what the Orb of Upheaval does, without the orb or its quality rule, on a generated item
+    // you carry or wear.
+    static bool HandleAffixRerollCommand(ChatHandler* handler, uint32 entry)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        Item* item = player->GetItemByEntry(entry);
+        if (!item)
+        {
+            handler->SendErrorMessage("You carry no item {}.", entry);
+            return false;
+        }
+        std::string before = item->GetTemplate()->Name1;
+        if (!sForgeMgr->RerollItem(player, item))
+        {
+            handler->SendErrorMessage("Item {} is not a generated item, or nothing rolled.", entry);
+            return false;
+        }
+        handler->PSendSysMessage("Rerolled {}: {} -> {}", entry, before, item->GetTemplate()->Name1);
+        return true;
     }
 
     // .forge info <entry>: show what a generated item rolled.

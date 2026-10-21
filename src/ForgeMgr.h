@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <vector>
 
+class Item;
 class Loot;
 class LootStore;
 class Player;
@@ -173,6 +174,14 @@ public:
     // eligible, no free pool entry, nothing rolled; a 0-affix roll keeps the plain item).
     uint32 Generate(ItemTemplate const* base, uint8 itemLevel, bool force = false, uint8 prefixes = 0, uint8 suffixes = 0,
         uint8 quality = ITEM_AFFIX_QUALITY_UNSET);
+
+    // Orb of Upheaval (docs/forge-currency.md): reroll every affix of a generated item under the same entry, keeping
+    // its base, item level and quality (the count rerolls within the quality's range). The old template is retired.
+    // False if entry isn't a generated item (Uniques and previews aren't). World thread.
+    bool Reroll(uint32 entry);
+    // Reroll player's item in place: an equipped item loses the old template's stats and gains the new ones. Sends the
+    // new template to player.
+    bool RerollItem(Player* player, Item* item);
 
     // A reward preview of base (e.g. a generated quest's reward choice): the base stripped like a roll with no
     // affixes, "<Random enchantment>" and note in the tooltip. Takes a pool entry but isn't saved, so the entry is

@@ -5,10 +5,12 @@
 
 void AddForgeScripts();
 void AddSC_forge_commandscript();
+void AddSC_forge_currency();
 
 // Called by the core's module loader (Add<module name with '-' as '_'>Scripts).
 void Addmod_forgeScripts()
 {
     AddForgeScripts();
     AddSC_forge_commandscript();
+    AddSC_forge_currency();
 }
