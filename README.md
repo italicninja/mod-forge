@@ -18,10 +18,11 @@ Every eligible drop is forged into a one-of-a-kind item, with its own name, stat
 
 | | |
 |---|---|
-| **Affixed items** | The base item keeps its look, armor and weapon damage. Its stats are replaced by prefixes and suffixes whose values split the base's vanilla stat budget, so power stays in line with the original game. *Vicious Chain Leggings of the Bear.* |
+| **Affixed items** | The base item keeps its look, armor and weapon damage. Its stats are replaced by prefixes and suffixes. Each affix rolls its own grade, a share of a green item's vanilla stat power, so more affixes mean more power while the averages stay at vanilla's quality ratios. *Vicious Chain Leggings of the Bear.* |
 | **Spell affixes** | One "Equip:" effect or "Chance on hit:" proc per item, taken from existing Spell.dbc spells, so the client draws the line itself. |
-| **Legendaries** | A small share of purple drops turn orange, with 4–6 affixes and 1.3× the budget. |
+| **Legendaries** | A small share of purple drops turn orange, with 4–6 affixes. |
 | **Uniques** | Hand-authored items in light gold, each dropped by one named creature, with fixed stats and flavour text. |
+| **Crafting orbs** | 19 droppable orbs, PoE's currency: reroll an item, add or remove affixes, reroll the values, forge a plain item, or corrupt it. See [Crafting orbs](#crafting-orbs). |
 
 <div align="center">
 <img src="docs/images/loot-gallery.png" alt="Six more generated items: a neck, plate and mail gloves, a dagger with a Nature proc, a sword, and a ring" width="900">
@@ -39,11 +40,76 @@ An item keeps its base item's quality. The quality decides how many affixes roll
 | 🟩 Uncommon (green) | 1–2 | |
 | 🟦 Rare (blue) | 2–3 | |
 | 🟪 Epic (purple) | 3–4 | |
-| 🟧 Legendary (orange) | 4–6 | `Forge.LegendaryChance` (0.5%) of eligible purple drops, 1.3× budget |
+| 🟧 Legendary (orange) | 4–6 | `Forge.LegendaryChance` (0.5%) of eligible purple drops |
 | 🟨 Unique (light gold) | fixed | Bind on pickup, one per character, separate roll on its creature |
 
-Prefixes and suffixes go up to three each. The item level of the drop (the mob's level) decides which affix tiers
-can roll; tiers set the affix's name, the budget sets its value.
+Prefixes and suffixes go up to three each. Each affix rolls a grade, which sets its value and its name:
+
+| Grade | Share of a green item's stat power | Chance | Name |
+|---|---|---|---|
+| 1 | 95–115% | 10% | the highest tier the item level unlocks (*Warlord's*, *of the Titan*) |
+| 2 | 75–95% | 25% | one tier lower |
+| 3 | 55–75% | 35% | two tiers lower |
+| 4 | 40–55% | 30% | three tiers lower |
+
+On average a green comes out at 1.0× a vanilla green's stats, a blue at 1.4×, a purple at 1.8× and a Legendary at
+2.3×, close to vanilla's own 1.0 / 1.35 / 1.7 / 2.2. The item level of the drop (the mob's level) decides which tiers
+exist. `Forge.AffixGrades = 0` splits the base item's budget instead (the rule before 2026-10-21).
+
+## Crafting orbs
+
+<div align="center">
+<img src="docs/images/orbs.png" alt="Tooltips of the Orb of Upheaval, Tear of the Naaru and Felfire Orb; below, Troll's Bane Leggings before and after an Orb of Upheaval, and a corrupted pair" width="900">
+<br><sub>The orbs' tooltips as the client draws them, and real rolls of Troll's Bane Leggings from the live realm: the
+left pair are two rolls of the same base, as an Orb of Upheaval turns one into another; the right one came out of a
+Felfire Orb with a fourth affix past the blue's cap, and is now Corrupted.</sub>
+</div>
+
+Orbs drop from any kill (`Forge.Currency.DropChance`, 2%; elites ×3, bosses ×10), one picked by its drop weight, and
+disenchanting a forged item gives one half the time. Right-click an orb, then click the item, in your bags or
+equipped. An orb that doesn't fit the item says why and stays in your bags.
+
+"Forged" means a generated item; "room" means fewer affixes than its quality allows, and an affix that still fits.
+
+| | Orb | PoE | Use: | Item | Drops |
+|---|---|---|---|---|---|
+| <img src="docs/images/orbs/inv_enchant_shardglimmeringsmall.png" width="24"> | **Shard of Awakening** | Transmutation | Awakens a plain weapon or piece of armor, giving it the fewest affixes its quality allows. | `60002` | common |
+| <img src="docs/images/orbs/inv_alchemy_enchantedvial.png" width="24"> | **Alchemist's Catalyst** | Alchemy | Awakens a plain weapon or piece of armor with the most affixes its quality allows. | `60006` | uncommon |
+| <img src="docs/images/orbs/inv_misc_coin_17.png" width="24"> | **Gambler's Coin** | Chance | Awakens a plain weapon or piece of armor at a random quality. Rarely, it becomes Legendary, or the Unique of its base. | `60007` | uncommon |
+| <img src="docs/images/orbs/inv_enchant_prismaticsphere.png" width="24"> | **Shifting Prism** | Alteration | Rerolls every affix on an Uncommon forged item. | `60003` | common |
+| <img src="docs/images/orbs/inv_elemental_mote_mana.png" width="24"> | **Mote of Augmentation** | Augmentation | Adds one affix to an Uncommon forged item that has room for another. | `60004` | common |
+| <img src="docs/images/orbs/inv_misc_orb_03.png" width="24"> | **Orb of Upheaval** | Chaos | Rerolls every affix on a Rare, Epic or Legendary forged item. The item keeps its quality. | `60001` | uncommon |
+| <img src="docs/images/orbs/inv_misc_orb_02.png" width="24"> | **Sovereign Orb** | Regal | Raises a forged item one quality step (Uncommon to Rare, Rare to Epic) and adds an affix. | `60008` | rare |
+| <img src="docs/images/orbs/inv_misc_gem_lionseye_01.png" width="24"> | **Eye of the Titans** | Exalted | Adds one affix to a Rare, Epic or Legendary forged item that has room for another. | `60012` | very rare |
+| <img src="docs/images/orbs/inv_enchant_voidcrystal.png" width="24"> | **Void Shard** | Annulment | Removes one random affix from a forged item. | `60009` | rare |
+| <img src="docs/images/orbs/inv_enchant_shardradientlarge.png" width="24"> | **Tear of the Naaru** | Divine | Keeps the affixes of a forged item or a Unique and rerolls their values. | `60011` | very rare |
+| <img src="docs/images/orbs/inv_misc_orb_05.png" width="24"> | **Felfire Orb** | Vaal | Corrupts a forged item or a Unique, with an unpredictable result. Corrupted items cannot be changed again. | `60010` | rare |
+| <img src="docs/images/orbs/inv_enchant_dustarcane.png" width="24"> | **Scouring Dust** | Scouring | Strips every affix from a forged item, leaving the plain base. | `60005` | common |
+| <img src="docs/images/orbs/inv_enchant_essenceastrallarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencemagiclarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essenceeternallarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencenetherlarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencemysticallarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencearcanelarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencecosmicgreater.png" width="24"> | **Essences**: Bear (Strength), Falcon (Agility), Mammoth (Stamina), Savant (Intellect), Owl (Spirit), Warlord (Attack Power), Archmage (Spell Power) | Essence | Rerolls a plain or forged weapon or piece of armor, guaranteeing that stat at grade 1. | `60013`–`60019` | very rare |
+
+No orb works on a Corrupted item. Only the Tear of the Naaru and the Felfire Orb work on Uniques: the Unique gets its
+own copy, with values rerolled ×0.8–1.2 (Tear) or one of nothing / a reroll / one stat ×1.25 / one stat ×0.75
+(Felfire). On a forged item the Felfire Orb rolls one of four, each a 1 in 4: nothing, new values, an affix past the
+quality's count, or one affix fewer.
+
+### Examples
+
+What players see in chat, with the GM commands to try each one (`.additem <orb> 5`, then right-click the orb):
+
+| Do this | Chat |
+|---|---|
+| `.forge roll 13114` (a blue), then an **Orb of Upheaval** on it | Your Mercenary's Troll's Bane Leggings of the Lion is reforged into Buttressed Troll's Bane Leggings of the Rhino. |
+| An **Eye of the Titans** on a blue with 2 affixes | Your Buttressed Troll's Bane Leggings of the Rhino grows into Buttressed Troll's Bane Leggings of Calamity. |
+| A **Tear of the Naaru** on the same item | The Light weighs your Buttressed Troll's Bane Leggings of Calamity anew: Buttressed Troll's Bane Leggings of Calamity. (same affixes, new numbers) |
+| A **Shard of Awakening** on a plain green (one that dropped before Forge, or a crafted one) | Your Rigid Tunic awakens as Lacquered Rigid Tunic. |
+| A **Gambler's Coin** on a plain item | The coin lands: your Dervish Tunic becomes Warlord's Dervish Tunic of the Falcon. (rarely Legendary, or its Unique) |
+| An **Essence of the Bear** on a forged item | The essence binds: your Lacquered Rigid Tunic becomes Lacquered Rigid Tunic of the Titan. (Strength at grade 1, the rest rerolled) |
+| A **Felfire Orb** on a forged item | Felfire empowers your Buttressed Troll's Bane Leggings of the Lion: Buttressed Troll's Bane Leggings of the Hydra. (and a red "Corrupted") |
+| An orb on the wrong item | *(on screen)* Only a Rare, Epic or Legendary forged item can be upheaved. |
+
+The item names in the chat lines are examples; every roll differs. `.forge info <entry>` shows an item's affixes,
+grades, and whether it is Corrupted or a Unique copy.
+
 
 ## How it works
 
@@ -76,7 +142,8 @@ flowchart LR
 3. Apply the SQL by hand: `sql/characters/` into `acore_characters`, then `sql/world/` into `acore_world` (see
    `sql/README.md`).
 4. Re-run CMake, build, and copy `conf/mod_forge.conf.dist` to `etc/modules/mod_forge.conf`.
-5. Hand players the client patch built from the same `pools.tsv` as the pool SQL.
+5. Hand players the client patch built from the same `pools.tsv` and `forge-currency.json` as the SQL (it carries
+   the pools' Item.dbc rows, and the orbs' items and Use: spells).
 
 ## Configuration
 
@@ -93,6 +160,10 @@ flowchart LR
 | `Forge.LegendaryChance` / `LegendaryBudget` | `0.5` / `1.3` | Legendary promotion (the budget multiplier only with `AffixGrades = 0`) |
 | `Forge.BudgetPerLevel` / `BudgetOffset` | `0.45` / `-3` | Budget estimate for bases without stats |
 | `Forge.RecycleIntervalMinutes` / `RecycleGraceMinutes` | `30` / `120` | Entry recycling |
+| `Forge.Currency.Enable` | `1` | Orbs drop, and disenchanting forged items gives them (orbs always work) |
+| `Forge.Currency.DropChance` | `2` | % per creature kill (not critters) |
+| `Forge.Currency.EliteMultiplier` / `BossMultiplier` | `3` / `10` | DropChance multiplier for elites and rares, and for dungeon and world bosses |
+| `Forge.Currency.DisenchantChance` | `50` | % per disenchanted forged item or Unique |
 
 Log channel: `module.forge`.
 
@@ -106,6 +177,7 @@ Log channel: `module.forge`.
 | `.forge legendary <base> [ilvl]` | Roll a Legendary |
 | `.forge unique [key]` | List the Uniques, or give yourself one |
 | `.forge info <entry>` | Show what a generated item rolled |
+| `.forge reroll <entry>` | What an Orb of Upheaval does, on an item you carry or wear, without the orb or its quality rule |
 
 ## For other modules
 
