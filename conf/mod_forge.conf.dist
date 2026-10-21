@@ -1,0 +1,100 @@
+##################################################
+# FORGE CONFIGURATION FILE                       #
+##################################################
+
+[worldserver]
+
+# Forge: PoE-style generated loot. Eligible drops become new items with prefixes and suffixes, plus
+# Legendaries, Uniques and spell affixes. Design: docs/loot-affixes.md in the wowproject repo.
+# GM commands: .forge (or .affix). Log: logger "module.forge" (under Logger.module).
+# Generated entries need the client's patch-enUS-4.MPQ (wowproject tools/client-patch).
+
+###################################################################################################
+# GENERATED LOOT (wowproject docs/loot-affixes.md)
+#
+#    Forge.Enable
+#        Description: Turn eligible creature and chest drops into generated items with 1-3
+#                     prefixes and 1-3 suffixes. Existing generated items always load.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+Forge.Enable = 1
+
+#
+#    Forge.Chance
+#        Description: Percent chance that an eligible drop becomes a generated item.
+#        Default:     100
+
+Forge.Chance = 100
+
+#
+#    Forge.MinQuality
+#    Forge.MaxQuality
+#        Description: Base item qualities that can roll (2 = uncommon, 3 = rare, 4 = epic).
+#                     Only BoE weapons and armor outside item sets are eligible.
+#        Default:     2, 3
+
+Forge.MinQuality = 2
+Forge.MaxQuality = 3
+
+#
+#    Forge.PrefixWeights
+#    Forge.SuffixWeights
+#        Description: Relative weights for rolling 1, 2 or 3 prefixes (suffixes).
+#        Default:     "50,35,15"
+
+Forge.PrefixWeights = "50,35,15"
+Forge.SuffixWeights = "50,35,15"
+
+#
+#    Forge.BudgetMode
+#        Description: Quality ladder (wowproject docs/loot-vanilla-plan.md). 1: an item keeps its base's quality
+#                     (or a Legendary promotion), its affix count comes from Forge.Count.*, and affix values
+#                     split the base item's stat budget (vanilla formula), so item power matches vanilla.
+#                     0: the original rule (1-3 prefixes/suffixes by weight, quality from the affix count).
+#        Default:     1
+#
+#    Forge.Count.Poor / Normal / Uncommon / Rare / Epic / Legendary
+#        Description: Affixes (prefixes + suffixes, at most 3 each) per quality, "min-max". 0 keeps the plain
+#                     item. Greys and whites only roll once their looks have Item.dbc pools.
+#        Default:     "0-1", "0-1", "1-2", "2-3", "3-4", "4-6"
+#
+#    Forge.LegendaryChance
+#        Description: Percent of eligible purple drops that become Legendary (orange, 4-6 affixes).
+#        Default:     0.5
+#
+#    Forge.LegendaryBudget
+#        Description: A Legendary's stat budget, as a multiple of its base item's.
+#        Default:     1.3
+#
+#    Forge.BudgetPerLevel / Forge.BudgetOffset
+#        Description: Stat budget for bases without template stats (whites, greys, random-suffix greens):
+#                     max(1, PerLevel * item level + Offset) x slot factor x quality factor (grey 0.25,
+#                     white 0.5, green 1, blue 1.35, purple 1.7). Fitted to vanilla greens (audit 2026-10-13).
+#        Default:     0.45, -3
+
+Forge.BudgetMode = 1
+Forge.Count.Poor = "0-1"
+Forge.Count.Normal = "0-1"
+Forge.Count.Uncommon = "1-2"
+Forge.Count.Rare = "2-3"
+Forge.Count.Epic = "3-4"
+Forge.Count.Legendary = "4-6"
+Forge.LegendaryChance = 0.5
+Forge.LegendaryBudget = 1.3
+Forge.BudgetPerLevel = 0.45
+Forge.BudgetOffset = -3
+
+#
+#    Forge.RecycleIntervalMinutes / Forge.RecycleGraceMinutes
+#        Description: Every IntervalMinutes (0 = only at startup), entries of generated items that no
+#                     item_instance references and that are older than GraceMinutes go back to their pool.
+#                     Grace must exceed PlayerSaveInterval so items held in memory are saved first; their
+#                     old templates stay in memory until shutdown.
+#        Default:     30, 120
+
+Forge.RecycleIntervalMinutes = 30
+Forge.RecycleGraceMinutes = 120
+
+#
+###################################################################################################
