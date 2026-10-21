@@ -96,6 +96,26 @@ Forge.BudgetPerLevel = 0.45
 Forge.BudgetOffset = -3
 
 #
+#    Forge.Currency.Enable
+#        Description: Crafting orbs (wowproject docs/forge-currency.md; world table forge_currency): orbs drop and
+#                     disenchanting forged items gives them. The orbs themselves always work.
+#        Default:     1
+#    Forge.Currency.DropChance
+#        Description: Percent chance that a creature kill (not critters) drops an orb, picked by drop weight.
+#        Default:     2
+#    Forge.Currency.EliteMultiplier / Forge.Currency.BossMultiplier
+#        Description: DropChance multiplier for elites and rares, and for dungeon and world bosses.
+#        Default:     3, 10
+#    Forge.Currency.DisenchantChance
+#        Description: Percent chance that disenchanting a forged item or a Unique also gives an orb.
+#        Default:     50
+
+Forge.Currency.Enable = 1
+Forge.Currency.DropChance = 2
+Forge.Currency.EliteMultiplier = 3
+Forge.Currency.BossMultiplier = 10
+Forge.Currency.DisenchantChance = 50
+
 #    Forge.RecycleIntervalMinutes / Forge.RecycleGraceMinutes
 #        Description: Every IntervalMinutes (0 = only at startup), entries of generated items that no
 #                     item_instance references and that are older than GraceMinutes go back to their pool.

@@ -157,8 +157,16 @@ public:
             return false;
         }
 
-        handler->PSendSysMessage("{}: base {}, quality {}, item level {} (dropped at {}), {} affixes", item->Template->Name1,
-            item->BaseEntry, item->Template->Quality, item->Template->ItemLevel, item->ItemLevel, item->Rolls.size());
+        handler->PSendSysMessage("{}: base {}, quality {}, item level {} (dropped at {}), {} affixes{}{}", item->Template->Name1,
+            item->BaseEntry, item->Template->Quality, item->Template->ItemLevel, item->ItemLevel, item->Rolls.size(),
+            item->UniqueKey.empty() ? "" : ", copy of Unique '" + item->UniqueKey + "'",
+            (item->Flags & GENERATED_ITEM_FLAG_CORRUPTED) ? ", Corrupted" : "");
+        if (!item->UniqueKey.empty())
+        {
+            for (ItemAffixRoll const& roll : item->Rolls)
+                handler->PSendSysMessage("  stat {} = {}", roll.Tier, roll.Value);
+            return true;
+        }
         for (ItemAffixRoll const& roll : item->Rolls)
         {
             ItemAffix const* affix = sForgeMgr->GetAffix(roll.AffixId);

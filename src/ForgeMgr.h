@@ -118,6 +118,40 @@ struct ItemAffixPool
     std::deque<uint32> Free; // entries < NextUnused that no item uses (oldest first)
 };
 
+// item_generated.flags
+enum GeneratedItemFlags : uint8
+{
+    GENERATED_ITEM_FLAG_CORRUPTED = 0x01, // Felfire Orb: no orb works on it any more
+};
+
+// Crafting orbs (docs/forge-currency.md), world table forge_currency.kind
+enum ForgeOrbKind : uint8
+{
+    FORGE_ORB_TRANSMUTE,  // Shard of Awakening: plain item -> forged, fewest affixes for its quality
+    FORGE_ORB_ALTERATION, // Shifting Prism: reroll an Uncommon (or lower) forged item
+    FORGE_ORB_AUGMENT,    // Mote of Augmentation: add an affix to an Uncommon (or lower) forged item with room
+    FORGE_ORB_SCOUR,      // Scouring Dust: forged -> plain base
+    FORGE_ORB_ALCHEMY,    // Alchemist's Catalyst: plain item -> forged, most affixes for its quality
+    FORGE_ORB_CHANCE,     // Gambler's Coin: plain item -> forged at a random quality, rarely Legendary or its Unique
+    FORGE_ORB_CHAOS,      // Orb of Upheaval: reroll a Rare or better forged item
+    FORGE_ORB_REGAL,      // Sovereign Orb: Uncommon -> Rare or Rare -> Epic, plus an affix
+    FORGE_ORB_ANNUL,      // Void Shard: remove a random affix
+    FORGE_ORB_VAAL,       // Felfire Orb: one of four outcomes, then Corrupted (forged items and Uniques)
+    FORGE_ORB_DIVINE,     // Tear of the Naaru: same affixes, new values (forged items and Uniques)
+    FORGE_ORB_EXALT,      // Eye of the Titans: add an affix to a Rare or better forged item with room
+    FORGE_ORB_ESSENCE,    // Essence: reroll with affix arg guaranteed at grade 1 (plain or forged)
+    MAX_FORGE_ORB
+};
+
+struct ForgeOrb
+{
+    uint32 SpellId;
+    uint32 ItemEntry;
+    ForgeOrbKind Kind;
+    int32 Arg;
+    uint32 DropWeight;
+};
+
 // Generated item quality when none is stored yet (rows from before quality was saved): rebuilt from the base.
 constexpr uint8 ITEM_AFFIX_QUALITY_UNSET = 0xFF;
 
@@ -130,6 +164,10 @@ struct GeneratedItem
     std::vector<ItemAffixRoll> Rolls;
     std::unique_ptr<ItemTemplate> Template;
     bool Preview = false; // CreatePreview: shown as a reward, never handed out, not saved
+    uint8 Flags = 0;       // GeneratedItemFlags
+    // A Unique given its own entry by an orb (Tear of the Naaru, Felfire Orb): Rolls hold its stats' values,
+    // Tier = index into the Unique's Stats, AffixId 0.
+    std::string UniqueKey;
 };
 
 // A hand-authored Unique (quality 6, light gold; docs/uniques-draft.md): fixed stats on a base look, dropped
@@ -183,6 +221,14 @@ public:
     // new template to player.
     bool RerollItem(Player* player, Item* item);
 
+    // Crafting orbs (ForgeCurrency.cpp). GetOrb: the orb whose Use: spell is spellId, or nullptr.
+    ForgeOrb const* GetOrb(uint32 spellId) const;
+    // Why orb can't be used on item ("" = it can). Any thread.
+    std::string CheckOrb(ForgeOrb const& orb, Player* player, Item* item) const;
+    // Use orb on player's item (checked with CheckOrb first). Orbs that replace the item do it after the cast, on
+    // player's next update. Tells player what happened. Map thread.
+    void UseOrb(ForgeOrb const& orb, Player* player, Item* item);
+
     // A reward preview of base (e.g. a generated quest's reward choice): the base stripped like a roll with no
     // affixes, "<Random enchantment>" and note in the tooltip. Takes a pool entry but isn't saved, so the entry is
     // free again after a restart; ReleasePreview frees it earlier. Returns the entry, or 0. World thread.
@@ -219,9 +265,11 @@ private:
     void LoadPools();
     void LoadGenerated();
     void LoadUniqueDefs();   // definitions and saved entries; before LoadGenerated (their entries aren't free)
+    void LoadCurrency();
     void FinishUniques();    // allocate missing entries, build templates; after LoadGenerated
 
     std::vector<ItemAffixRoll> Roll(ItemTemplate const* base, uint8 itemLevel, uint8 prefixes, uint8 suffixes, uint8 quality) const;
+    static uint8 RollGrade(); // 1..ITEM_AFFIX_GRADES by the grade weights
     // Grade mode: a green item's stat budget for base's level and slot, from its own stats if it has any.
     float GreenBudget(ItemTemplate const* base) const;
     // Grade mode: set roll's value from its grade (a random share within the grade's band of greenBudget).
@@ -231,6 +279,26 @@ private:
     float ItemBudget(ItemTemplate const* base, uint8 quality) const;
     std::unique_ptr<ItemTemplate> BuildTemplate(uint32 entry, ItemTemplate const& base, uint8 itemLevel,
         std::vector<ItemAffixRoll> const& rolls, uint32 displayOverride, uint8 quality) const;
+    // A Unique's template at entry; values (a Unique-derived item's rolls) override its stats' values.
+    std::unique_ptr<ItemTemplate> BuildUniqueTemplate(UniqueItem const& unique, ItemTemplate const& base, uint32 entry,
+        uint32 displayOverride, std::vector<ItemAffixRoll> const* values) const;
+    // The template for a generated item: affixes or Unique-derived, plus the Corrupted line.
+    std::unique_ptr<ItemTemplate> MakeTemplate(GeneratedItem const& item, ItemTemplate const& base, uint32 displayOverride) const;
+    UniqueItem const* FindUniqueDef(std::string const& key) const;
+    // Allocate an entry for base and save a new generated item. Returns the entry, or 0 (no free pool entry).
+    uint32 CreateGenerated(ItemTemplate const* base, uint8 itemLevel, uint8 quality, std::vector<ItemAffixRoll> rolls,
+        std::string const& uniqueKey = "", uint8 flags = 0);
+    // Orbs (ForgeCurrency.cpp). Caller holds _lock exclusively for the Locked ones.
+    void RebuildLocked(GeneratedItem& item);
+    // Affixes that may still be added to rolls (kinds with room, groups not used, slot and item level fit).
+    std::vector<ItemAffix const*> AffixCandidates(std::vector<ItemAffixRoll> const& rolls, ItemTemplate const* base,
+        uint8 itemLevel, uint32 onlyAffix = 0) const;
+    // Add one affix (onlyAffix, if set) at grade (0: rolled). False if nothing fits.
+    bool AddRoll(std::vector<ItemAffixRoll>& rolls, ItemTemplate const* base, uint8 itemLevel, uint32 onlyAffix = 0,
+        uint8 grade = 0) const;
+    // count affixes (the first is onlyAffix at grade 1, if set).
+    std::vector<ItemAffixRoll> RollCount(ItemTemplate const* base, uint8 itemLevel, uint32 count, uint32 onlyAffix = 0) const;
+    void RerollValue(ItemAffixRoll& roll, ItemTemplate const* base) const;
     // Caller holds _lock exclusively. Returns {entry, pool}.
     std::pair<uint32, ItemAffixPool*> AllocateEntry(ItemTemplate const* base, bool& reused);
     ItemAffixPool* FindPool(uint32 entry);
@@ -276,6 +344,15 @@ private:
     // Templates of recycled entries. Kept until shutdown, so pointers from GetTemplate never dangle.
     std::vector<std::unique_ptr<ItemTemplate>> _retired;
     bool _warnedNoPool = false;
+
+    // Crafting orbs: fixed after Load, read without the lock.
+    std::unordered_map<uint32, ForgeOrb> _orbs; // by spell id
+    bool _currencyEnabled = true;
+    float _orbDropChance = 2.0f;      // % per kill
+    float _orbEliteMultiplier = 3.0f;
+    float _orbBossMultiplier = 10.0f;
+    float _orbDisenchantChance = 50.0f; // % per disenchanted forged item
+    uint32 PickOrbEntry() const;      // a random orb item by drop weight, or 0
 };
 
 #define sForgeMgr ForgeMgr::instance()

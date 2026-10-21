@@ -247,9 +247,10 @@ void ForgeMgr::Load()
     LoadUniqueDefs();
     LoadGenerated();
     FinishUniques();
+    LoadCurrency();
 
-    LOG_INFO("server.loading", ">> Loaded {} item affixes, {} entry pools, {} generated items, {} uniques in {} ms ({})",
-        _affixes.size(), _pools.size(), _generated.size(), _uniqueByEntry.size(), GetMSTimeDiffToNow(oldMSTime),
+    LOG_INFO("server.loading", ">> Loaded {} item affixes, {} entry pools, {} generated items, {} uniques, {} orbs in {} ms ({})",
+        _affixes.size(), _pools.size(), _generated.size(), _uniqueByEntry.size(), _orbs.size(), GetMSTimeDiffToNow(oldMSTime),
         _enabled ? "generation enabled" : "generation disabled");
     LOG_INFO("server.loading", " ");
 }
@@ -279,6 +280,11 @@ void ForgeMgr::LoadConfig()
     _budgetOffset = sConfigMgr->GetOption<float>("Forge.BudgetOffset", -3.0f);
     _recycleIntervalMs = sConfigMgr->GetOption<uint32>("Forge.RecycleIntervalMinutes", 30) * MINUTE * IN_MILLISECONDS;
     _recycleGraceMinutes = std::max<uint32>(30, sConfigMgr->GetOption<uint32>("Forge.RecycleGraceMinutes", 120));
+    _currencyEnabled = sConfigMgr->GetOption<bool>("Forge.Currency.Enable", true);
+    _orbDropChance = sConfigMgr->GetOption<float>("Forge.Currency.DropChance", 2.0f);
+    _orbEliteMultiplier = sConfigMgr->GetOption<float>("Forge.Currency.EliteMultiplier", 3.0f);
+    _orbBossMultiplier = sConfigMgr->GetOption<float>("Forge.Currency.BossMultiplier", 10.0f);
+    _orbDisenchantChance = sConfigMgr->GetOption<float>("Forge.Currency.DisenchantChance", 50.0f);
 }
 
 void ForgeMgr::Update(uint32 diff)
@@ -396,6 +402,11 @@ float ForgeMgr::ItemBudget(ItemTemplate const* base, uint8 quality) const
             budget *= _qualityBudget[quality] / std::max(0.01f, _qualityBudget[base->Quality]);
     }
     return budget;
+}
+
+uint8 ForgeMgr::RollGrade()
+{
+    return PickGrade();
 }
 
 float ForgeMgr::GreenBudget(ItemTemplate const* base) const
@@ -624,7 +635,7 @@ void ForgeMgr::LoadGenerated()
     }
 
     uint32 regenerated = 0;
-    if (QueryResult result = CharacterDatabase.Query("SELECT entry, base_entry, item_level, quality FROM item_generated"))
+    if (QueryResult result = CharacterDatabase.Query("SELECT entry, base_entry, item_level, quality, flags, unique_key FROM item_generated"))
     {
         do
         {
@@ -634,6 +645,14 @@ void ForgeMgr::LoadGenerated()
             item->BaseEntry = fields[1].Get<uint32>();
             item->ItemLevel = fields[2].Get<uint8>();
             item->Quality = fields[3].IsNull() ? ITEM_AFFIX_QUALITY_UNSET : fields[3].Get<uint8>();
+            item->Flags = fields[4].Get<uint8>();
+            item->UniqueKey = fields[5].IsNull() ? "" : fields[5].Get<std::string>();
+            if (!item->UniqueKey.empty() && !FindUniqueDef(item->UniqueKey))
+            {
+                LOG_ERROR("sql.sql", "Table `item_generated`: entry {} is a copy of unknown Unique '{}'; items using it will be "
+                    "deleted at login.", fields[0].Get<uint32>(), item->UniqueKey);
+                continue;
+            }
 
             ItemTemplate const* base = sObjectMgr->GetItemTemplate(item->BaseEntry);
             if (!base || item->Entry < sObjectMgr->GetItemTemplateStoreFast()->size())
@@ -647,7 +666,7 @@ void ForgeMgr::LoadGenerated()
             ItemAffixPool* pool = FindPool(item->Entry);
             // Regenerate rows from before the quality ladder: keep the affixes and tiers (and so the name),
             // take the base's quality and re-split its budget.
-            if (_budgetMode && item->Quality >= MAX_ITEM_QUALITY)
+            if (_budgetMode && item->Quality >= MAX_ITEM_QUALITY && item->UniqueKey.empty())
             {
                 item->Quality = uint8(std::min<uint32>(base->Quality, ITEM_QUALITY_LEGENDARY));
                 SplitBudget(item->Rolls, ItemBudget(base, item->Quality));
@@ -655,8 +674,7 @@ void ForgeMgr::LoadGenerated()
                     SaveGenerated(*item, *pool);
                 ++regenerated;
             }
-            item->Template = BuildTemplate(item->Entry, *base, item->ItemLevel, item->Rolls, pool ? pool->DisplayId : 0,
-                item->Quality);
+            item->Template = MakeTemplate(*item, *base, pool ? pool->DisplayId : 0);
             if (pool && pool->NextUnused <= item->Entry)
                 pool->NextUnused = item->Entry + 1;
             _generated[item->Entry] = std::move(item);
@@ -781,39 +799,7 @@ void ForgeMgr::FinishUniques()
         }
 
         ItemAffixPool* pool = FindPool(unique->Entry);
-        std::unique_ptr<ItemTemplate> t = BuildTemplate(unique->Entry, *base, unique->ItemLevel, {}, pool ? pool->DisplayId : 0,
-            ITEM_QUALITY_ARTIFACT);
-        t->Name1 = unique->Name;
-        t->Description = unique->Description;
-        t->ItemLevel = std::max<uint32>(unique->ItemLevel, 1);
-        t->RequiredLevel = std::min<uint32>(unique->RequiredLevel, sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
-        t->Bonding = BIND_WHEN_PICKED_UP;
-        t->MaxCount = 1; // "Unique": one per character
-        for (auto const& [effect, arg, value] : unique->Stats)
-        {
-            switch (effect)
-            {
-                case ITEM_AFFIX_EFFECT_STAT:
-                    if (t->StatsCount < MAX_ITEM_PROTO_STATS)
-                    {
-                        t->ItemStat[t->StatsCount].ItemStatType = arg;
-                        t->ItemStat[t->StatsCount].ItemStatValue = value;
-                        ++t->StatsCount;
-                    }
-                    break;
-                case ITEM_AFFIX_EFFECT_RESIST: SetResistance(*t, arg, value); break;
-                case ITEM_AFFIX_EFFECT_ARMOR:  t->Armor += value; break;
-                case ITEM_AFFIX_EFFECT_EQUIP_SPELL:
-                case ITEM_AFFIX_EFFECT_HIT_SPELL:
-                    if (sSpellMgr->GetSpellInfo(uint32(value)))
-                        AddItemSpell(*t, effect, arg, value);
-                    else
-                        LOG_ERROR("sql.sql", "Table `item_unique_stat`: '{}' has unknown spell {}, skipped.", unique->Key, value);
-                    break;
-                default: break;
-            }
-        }
-        t->SellPrice = std::max<uint32>(1, base->SellPrice * 4);
+        std::unique_ptr<ItemTemplate> t = BuildUniqueTemplate(*unique, *base, unique->Entry, pool ? pool->DisplayId : 0, nullptr);
         unique->Template = std::move(t);
         _uniqueByEntry[unique->Entry] = unique.get();
         if (unique->CreatureEntry)
@@ -821,6 +807,70 @@ void ForgeMgr::FinishUniques()
         _minEntry = std::min(_minEntry, unique->Entry);
         _maxEntry = std::max(_maxEntry, unique->Entry + 1);
     }
+}
+
+std::unique_ptr<ItemTemplate> ForgeMgr::BuildUniqueTemplate(UniqueItem const& unique, ItemTemplate const& base, uint32 entry,
+    uint32 displayOverride, std::vector<ItemAffixRoll> const* values) const
+{
+    std::unique_ptr<ItemTemplate> t = BuildTemplate(entry, base, unique.ItemLevel, {}, displayOverride, ITEM_QUALITY_ARTIFACT);
+    t->Name1 = unique.Name;
+    t->Description = unique.Description;
+    t->ItemLevel = std::max<uint32>(unique.ItemLevel, 1);
+    t->RequiredLevel = std::min<uint32>(unique.RequiredLevel, sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
+    t->Bonding = BIND_WHEN_PICKED_UP;
+    t->MaxCount = 1; // "Unique": one per character
+    for (std::size_t i = 0; i < unique.Stats.size(); ++i)
+    {
+        auto [effect, arg, value] = unique.Stats[i];
+        if (values && !IsSpellEffect(effect))
+            for (ItemAffixRoll const& roll : *values)
+                if (roll.Tier == i)
+                    value = roll.Value;
+        switch (effect)
+        {
+            case ITEM_AFFIX_EFFECT_STAT:
+                if (t->StatsCount < MAX_ITEM_PROTO_STATS)
+                {
+                    t->ItemStat[t->StatsCount].ItemStatType = arg;
+                    t->ItemStat[t->StatsCount].ItemStatValue = value;
+                    ++t->StatsCount;
+                }
+                break;
+            case ITEM_AFFIX_EFFECT_RESIST: SetResistance(*t, arg, value); break;
+            case ITEM_AFFIX_EFFECT_ARMOR:  t->Armor += value; break;
+            case ITEM_AFFIX_EFFECT_EQUIP_SPELL:
+            case ITEM_AFFIX_EFFECT_HIT_SPELL:
+                if (sSpellMgr->GetSpellInfo(uint32(value)))
+                    AddItemSpell(*t, effect, arg, value);
+                else
+                    LOG_ERROR("sql.sql", "Table `item_unique_stat`: '{}' has unknown spell {}, skipped.", unique.Key, value);
+                break;
+            default: break;
+        }
+    }
+    t->SellPrice = std::max<uint32>(1, base.SellPrice * 4);
+    return t;
+}
+
+UniqueItem const* ForgeMgr::FindUniqueDef(std::string const& key) const
+{
+    for (auto const& unique : _uniques)
+        if (unique->Key == key)
+            return unique.get();
+    return nullptr;
+}
+
+std::unique_ptr<ItemTemplate> ForgeMgr::MakeTemplate(GeneratedItem const& item, ItemTemplate const& base, uint32 displayOverride) const
+{
+    std::unique_ptr<ItemTemplate> t;
+    UniqueItem const* unique = item.UniqueKey.empty() ? nullptr : FindUniqueDef(item.UniqueKey);
+    if (unique)
+        t = BuildUniqueTemplate(*unique, base, item.Entry, displayOverride, &item.Rolls);
+    else
+        t = BuildTemplate(item.Entry, base, item.ItemLevel, item.Rolls, displayOverride, item.Quality);
+    if (item.Flags & GENERATED_ITEM_FLAG_CORRUPTED)
+        t->Description = t->Description.empty() ? "|cffff2020Corrupted|r" : t->Description + " |cffff2020Corrupted|r";
+    return t;
 }
 
 UniqueItem const* ForgeMgr::GetUnique(std::string const& key) const
@@ -1262,7 +1312,12 @@ uint32 ForgeMgr::Generate(ItemTemplate const* base, uint8 itemLevel, bool force,
     std::vector<ItemAffixRoll> rolls = Roll(base, itemLevel, prefixes, suffixes, quality);
     if (rolls.empty())
         return 0;
+    return CreateGenerated(base, itemLevel, quality, std::move(rolls));
+}
 
+uint32 ForgeMgr::CreateGenerated(ItemTemplate const* base, uint8 itemLevel, uint8 quality, std::vector<ItemAffixRoll> rolls,
+    std::string const& uniqueKey, uint8 flags)
+{
     std::unique_lock lock(_lock);
     bool reused = false;
     auto [entry, pool] = AllocateEntry(base, reused);
@@ -1283,7 +1338,9 @@ uint32 ForgeMgr::Generate(ItemTemplate const* base, uint8 itemLevel, bool force,
     item->ItemLevel = itemLevel;
     item->Quality = quality;
     item->Rolls = std::move(rolls);
-    item->Template = BuildTemplate(entry, *base, itemLevel, item->Rolls, pool->DisplayId, quality);
+    item->Flags = flags;
+    item->UniqueKey = uniqueKey;
+    item->Template = MakeTemplate(*item, *base, pool->DisplayId);
     SaveGenerated(*item, *pool);
     _generated[entry] = std::move(item);
 
@@ -1295,7 +1352,7 @@ uint32 ForgeMgr::Generate(ItemTemplate const* base, uint8 itemLevel, bool force,
 bool ForgeMgr::Reroll(uint32 entry)
 {
     GeneratedItem const* current = GetGenerated(entry);
-    if (!current || current->Preview)
+    if (!current || current->Preview || !current->UniqueKey.empty())
         return false;
     ItemTemplate const* base = sObjectMgr->GetItemTemplate(current->BaseEntry);
     if (!base)
@@ -1316,10 +1373,7 @@ bool ForgeMgr::Reroll(uint32 entry)
 
     item.Quality = quality;
     item.Rolls = std::move(rolls);
-    // Keep the old template like a recycled one: pointers to it may still be held
-    _retired.push_back(std::move(item.Template));
-    item.Template = BuildTemplate(entry, *base, item.ItemLevel, item.Rolls, pool->DisplayId, quality);
-    SaveGenerated(item, *pool);
+    RebuildLocked(item);
     return true;
 }
 
@@ -1382,12 +1436,16 @@ void ForgeMgr::SaveGenerated(GeneratedItem const& item, ItemAffixPool const& poo
 {
     CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     trans->Append("DELETE FROM item_generated_affix WHERE entry = {}", item.Entry);
-    if (item.Quality < MAX_ITEM_QUALITY)
-        trans->Append("REPLACE INTO item_generated (entry, base_entry, item_level, quality) VALUES ({}, {}, {}, {})",
-            item.Entry, item.BaseEntry, item.ItemLevel, item.Quality);
-    else
-        trans->Append("REPLACE INTO item_generated (entry, base_entry, item_level) VALUES ({}, {}, {})",
-            item.Entry, item.BaseEntry, item.ItemLevel);
+    std::string quality = item.Quality < MAX_ITEM_QUALITY ? std::to_string(item.Quality) : "NULL";
+    std::string uniqueKey = "NULL";
+    if (!item.UniqueKey.empty())
+    {
+        std::string key = item.UniqueKey;
+        CharacterDatabase.EscapeString(key);
+        uniqueKey = "'" + key + "'";
+    }
+    trans->Append("REPLACE INTO item_generated (entry, base_entry, item_level, quality, flags, unique_key) VALUES ({}, {}, {}, {}, {}, {})",
+        item.Entry, item.BaseEntry, item.ItemLevel, quality, item.Flags, uniqueKey);
     for (std::size_t i = 0; i < item.Rolls.size(); ++i)
         trans->Append("INSERT INTO item_generated_affix (entry, idx, affix_id, tier, value, grade) VALUES ({}, {}, {}, {}, {}, {})",
             item.Entry, i, item.Rolls[i].AffixId, item.Rolls[i].Tier, item.Rolls[i].Value, item.Rolls[i].Grade);
@@ -1408,6 +1466,16 @@ void ForgeMgr::OnLootFilled(Loot& loot, LootStore const& store, Player* lootOwne
     if (!_enabled || !lootOwner || _pools.empty())
         return;
 
+    // Disenchanting a forged item (or a Unique) may also give an orb.
+    if (&store == &LootTemplates_Disenchant)
+    {
+        Item* item = loot.containerGUID.IsItem() ? lootOwner->GetItemByGuid(loot.containerGUID) : nullptr;
+        if (_currencyEnabled && item && GetTemplate(item->GetEntry()) && roll_chance_f(_orbDisenchantChance))
+            if (uint32 orb = PickOrbEntry())
+                loot.AddItem(LootStoreItem(orb, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1));
+        return;
+    }
+
     uint8 itemLevel;
     if (&store == &LootTemplates_Creature && lootSource && lootSource->IsCreature())
         itemLevel = lootSource->ToCreature()->GetLevel();
@@ -1415,6 +1483,24 @@ void ForgeMgr::OnLootFilled(Loot& loot, LootStore const& store, Player* lootOwne
         itemLevel = lootOwner->GetLevel();
     else
         return;
+
+    // Orbs drop from any creature but critters, more often from elites and bosses (docs/forge-currency.md).
+    if (_currencyEnabled && &store == &LootTemplates_Creature && lootSource && lootSource->IsCreature())
+    {
+        Creature* creature = lootSource->ToCreature();
+        CreatureTemplate const* info = creature->GetCreatureTemplate();
+        if (info->type != CREATURE_TYPE_CRITTER)
+        {
+            float chance = _orbDropChance;
+            if (info->rank == CREATURE_ELITE_WORLDBOSS || creature->IsDungeonBoss())
+                chance *= _orbBossMultiplier;
+            else if (info->rank != CREATURE_ELITE_NORMAL)
+                chance *= _orbEliteMultiplier;
+            if (roll_chance_f(chance))
+                if (uint32 orb = PickOrbEntry())
+                    loot.AddItem(LootStoreItem(orb, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1));
+        }
+    }
 
     std::vector<uint32> created;
     for (LootItem& item : loot.items)
