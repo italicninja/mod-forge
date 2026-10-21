@@ -69,9 +69,10 @@ flowchart LR
 ## Install
 
 1. Clone into `azerothcore-wotlk/modules/mod-forge`.
-2. Apply the core patch `0001-generated-item-hooks`. It adds the runtime item-template lookup
-   (`ObjectMgr::SetGeneratedItemTemplateLookup`, `IsGeneratedItem`), the `WorldScript::OnAfterItemTemplatesLoad`
-   hook and two null checks.
+2. Build against a core with the generated-item hooks: our fork `italicninja/azerothcore-wotlk`, branch
+   `wowproject`, has them as the commit "Generated items: runtime item templates and a load hook" (aad641bd6). It adds
+   the runtime item-template lookup (`ObjectMgr::SetGeneratedItemTemplateLookup`, `IsGeneratedItem`), the
+   `WorldScript::OnAfterItemTemplatesLoad` hook and two null checks; cherry-pick it onto another playerbots core.
 3. Apply the SQL by hand: `sql/characters/` into `acore_characters`, then `sql/world/` into `acore_world` (see
    `sql/README.md`).
 4. Re-run CMake, build, and copy `conf/mod_forge.conf.dist` to `etc/modules/mod_forge.conf`.
@@ -115,7 +116,7 @@ to keep bots' forged gear.
 ## Status
 
 Extracted on 2026-10-20 from the wowproject core patches `0001-item-affixes` and `0006-item-affix-spells`, where
-the code ran live from 2026-10-13. Not yet built as a module. The design docs (`docs/loot-affixes.md`,
+the code ran live from 2026-10-13. Live as a module since 2026-10-21 on the wowproject realm. The design docs (`docs/loot-affixes.md`,
 `docs/loot-vanilla-plan.md`, `docs/uniques-draft.md`) and the data generators (`tools/item-affixes/`,
 `tools/client-patch/`) live in the wowproject repo for now.
 
