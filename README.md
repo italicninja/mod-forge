@@ -88,8 +88,9 @@ flowchart LR
 | `Forge.Chance` | `100` | % of eligible drops that are forged |
 | `Forge.MinQuality` / `MaxQuality` | `2` / `3` | Base qualities that can roll (our realm: `0` / `4`) |
 | `Forge.BudgetMode` | `1` | Quality ladder and vanilla stat budgets (`0`: the original count-based rule) |
+| `Forge.AffixGrades` | `1` | With the ladder: each affix rolls its own grade (PoE-style, more affixes = more power); `0` splits the base's stat budget |
 | `Forge.Count.<Quality>` | see above | Affix count range per quality, `"min-max"` |
-| `Forge.LegendaryChance` / `LegendaryBudget` | `0.5` / `1.3` | Legendary promotion |
+| `Forge.LegendaryChance` / `LegendaryBudget` | `0.5` / `1.3` | Legendary promotion (the budget multiplier only with `AffixGrades = 0`) |
 | `Forge.BudgetPerLevel` / `BudgetOffset` | `0.45` / `-3` | Budget estimate for bases without stats |
 | `Forge.RecycleIntervalMinutes` / `RecycleGraceMinutes` | `30` / `120` | Entry recycling |
 

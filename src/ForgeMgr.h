@@ -91,11 +91,17 @@ struct ItemAffix
     ItemAffixTier const* GetTier(uint8 tier) const;
 };
 
+// Affix grades (Forge.AffixGrades, PoE-style): each affix rolls its own grade, 1 best .. 4 worst, and a stat affix
+// gets that grade's share of a green item's stat power, so more affixes mean more power. 0: a roll from before
+// grades (budget split or plain tier value) or a spell affix.
+constexpr uint8 ITEM_AFFIX_GRADES = 4;
+
 struct ItemAffixRoll
 {
     uint32 AffixId;
     uint8 Tier;
     int32 Value;
+    uint8 Grade = 0;
 };
 
 // A range of entries reserved in the client's Item.dbc. Every row in the range carries the same
@@ -207,6 +213,10 @@ private:
     void FinishUniques();    // allocate missing entries, build templates; after LoadGenerated
 
     std::vector<ItemAffixRoll> Roll(ItemTemplate const* base, uint8 itemLevel, uint8 prefixes, uint8 suffixes, uint8 quality) const;
+    // Grade mode: a green item's stat budget for base's level and slot, from its own stats if it has any.
+    float GreenBudget(ItemTemplate const* base) const;
+    // Grade mode: set roll's value from its grade (a random share within the grade's band of greenBudget).
+    void SetGradeValue(ItemAffixRoll& roll, ItemAffix const& affix, ItemAffixTier const& tier, float greenBudget) const;
     // Budget mode: set the values of budgeted rolls (stats, resistances, flat armor) from budget.
     void SplitBudget(std::vector<ItemAffixRoll>& rolls, float budget) const;
     float ItemBudget(ItemTemplate const* base, uint8 quality) const;
@@ -226,6 +236,7 @@ private:
     std::vector<uint32> _suffixWeights;
     // Quality follows the base item; affix count range per quality; values split the item's stat budget.
     bool _budgetMode = true;
+    bool _affixGrades = true; // with the ladder: each affix rolls a grade instead of splitting the base's budget
     uint8 _countMin[MAX_ITEM_QUALITY] = { 0, 0, 1, 2, 3, 4, 6, 0 };
     uint8 _countMax[MAX_ITEM_QUALITY] = { 1, 1, 2, 3, 4, 6, 6, 0 };
     float _qualityBudget[MAX_ITEM_QUALITY] = { 0.25f, 0.5f, 1.0f, 1.35f, 1.7f, 2.2f, 2.2f, 1.0f }; // x green

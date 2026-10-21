@@ -163,6 +163,38 @@ namespace
         }
     }
 
+    // Affix grades: the share of a green item's stat power (vanilla budget formula, summed as power^1.5) that one
+    // affix of each grade gets, and how often each grade rolls. The mean share is about 2/3, so the quality
+    // ladder's affix counts (green 1-2 ... Legendary 4-6) come out at vanilla's quality ratios on average
+    // (green 1.0, blue 1.42, epic 1.79, Legendary 2.27; simulated 2026-10-21), with PoE-like spread.
+    struct GradeBand
+    {
+        float Min;
+        float Max;
+        uint32 Weight;
+    };
+    constexpr GradeBand GRADE_BANDS[ITEM_AFFIX_GRADES] = {
+        { 0.95f, 1.15f, 10 },
+        { 0.75f, 0.95f, 25 },
+        { 0.55f, 0.75f, 35 },
+        { 0.40f, 0.55f, 30 },
+    };
+
+    uint8 PickGrade()
+    {
+        uint32 total = 0;
+        for (GradeBand const& band : GRADE_BANDS)
+            total += band.Weight;
+        uint32 roll = urand(1, total);
+        for (uint8 grade = 1; grade <= ITEM_AFFIX_GRADES; ++grade)
+        {
+            if (roll <= GRADE_BANDS[grade - 1].Weight)
+                return grade;
+            roll -= GRADE_BANDS[grade - 1].Weight;
+        }
+        return ITEM_AFFIX_GRADES;
+    }
+
     // "lo-hi" or "n" -> {lo, hi}, each 0..6.
     std::pair<uint8, uint8> ParseRange(std::string const& value, std::pair<uint8, uint8> fallback)
     {
@@ -232,6 +264,7 @@ void ForgeMgr::LoadConfig()
     _suffixWeights = ParseWeights(sConfigMgr->GetOption<std::string>("Forge.SuffixWeights", "50,35,15"), { 50, 35, 15 });
 
     _budgetMode = sConfigMgr->GetOption<bool>("Forge.BudgetMode", true);
+    _affixGrades = sConfigMgr->GetOption<bool>("Forge.AffixGrades", true);
     static char const* const countKeys[] = { "Poor", "Normal", "Uncommon", "Rare", "Epic", "Legendary" };
     static constexpr std::pair<uint8, uint8> countDefaults[] = { { 0, 1 }, { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 6 } };
     for (uint8 q = ITEM_QUALITY_POOR; q <= ITEM_QUALITY_LEGENDARY; ++q)
@@ -363,6 +396,37 @@ float ForgeMgr::ItemBudget(ItemTemplate const* base, uint8 quality) const
             budget *= _qualityBudget[quality] / std::max(0.01f, _qualityBudget[base->Quality]);
     }
     return budget;
+}
+
+float ForgeMgr::GreenBudget(ItemTemplate const* base) const
+{
+    float budget = BaseBudget(base);
+    uint32 quality = std::min<uint32>(base->Quality, MAX_ITEM_QUALITY - 1);
+    if (budget > 0.0f)
+        return budget / std::max(0.01f, _qualityBudget[quality]);
+    return EstimateBudget(base->ItemLevel, base->InventoryType, ITEM_QUALITY_UNCOMMON);
+}
+
+void ForgeMgr::SetGradeValue(ItemAffixRoll& roll, ItemAffix const& affix, ItemAffixTier const& tier, float greenBudget) const
+{
+    if (IsSpellEffect(affix.Effect))
+    {
+        roll.Grade = 0;
+        roll.Value = tier.MinValue;
+        return;
+    }
+    if (!roll.Grade || roll.Grade > ITEM_AFFIX_GRADES)
+        roll.Grade = PickGrade();
+    float cost = BudgetCost(affix);
+    if (cost <= 0.0f)
+    {
+        // Percent effects keep their tier's range; the grade picked the tier.
+        roll.Value = irand(tier.MinValue, tier.MaxValue);
+        return;
+    }
+    GradeBand const& band = GRADE_BANDS[roll.Grade - 1];
+    float value = std::pow(frand(band.Min, band.Max), 2.0f / 3.0f) * greenBudget / cost;
+    roll.Value = std::max<int32>(1, int32(std::lround(value)));
 }
 
 void ForgeMgr::SplitBudget(std::vector<ItemAffixRoll>& rolls, float budget) const
@@ -549,12 +613,13 @@ void ForgeMgr::LoadGenerated()
     CharacterDatabase.DirectExecute("DELETE a FROM item_generated_affix a LEFT JOIN item_generated g ON g.entry = a.entry WHERE g.entry IS NULL");
 
     std::unordered_map<uint32, std::vector<ItemAffixRoll>> rolls;
-    if (QueryResult result = CharacterDatabase.Query("SELECT entry, affix_id, tier, value FROM item_generated_affix ORDER BY entry, idx"))
+    if (QueryResult result = CharacterDatabase.Query("SELECT entry, affix_id, tier, value, grade FROM item_generated_affix ORDER BY entry, idx"))
     {
         do
         {
             Field* fields = result->Fetch();
-            rolls[fields[0].Get<uint32>()].push_back({ fields[1].Get<uint32>(), fields[2].Get<uint8>(), fields[3].Get<int32>() });
+            rolls[fields[0].Get<uint32>()].push_back({ fields[1].Get<uint32>(), fields[2].Get<uint8>(), fields[3].Get<int32>(),
+                fields[4].Get<uint8>() });
         } while (result->NextRow());
     }
 
@@ -908,6 +973,8 @@ std::vector<ItemAffixRoll> ForgeMgr::Roll(ItemTemplate const* base, uint8 itemLe
 {
     uint32 mask = GetItemMask(base);
     float slotFactor = GetSlotFactor(base->InventoryType);
+    bool grades = _budgetMode && _affixGrades;
+    float greenBudget = grades ? GreenBudget(base) : 0.0f;
     std::set<uint32> usedGroups;
     std::vector<ItemAffixRoll> rolls;
 
@@ -959,6 +1026,24 @@ std::vector<ItemAffixRoll> ForgeMgr::Roll(ItemTemplate const* base, uint8 itemLe
                 pick -= candidate->Weight;
             }
 
+            if (grades)
+            {
+                // The grade names the affix: grade 1 takes the highest tier the item level unlocks, each grade
+                // below one tier lower. A spell affix takes the highest.
+                std::vector<ItemAffixTier const*> unlocked;
+                for (ItemAffixTier const& t : affix->Tiers)
+                    if (t.MinItemLevel <= itemLevel)
+                        unlocked.push_back(&t);
+                ItemAffixRoll roll { affix->Id, 0, 0, IsSpellEffect(affix->Effect) ? uint8(0) : PickGrade() };
+                std::size_t below = roll.Grade ? std::min<std::size_t>(roll.Grade - 1, unlocked.size() - 1) : 0;
+                ItemAffixTier const* tier = unlocked[unlocked.size() - 1 - below];
+                roll.Tier = tier->Tier;
+                SetGradeValue(roll, *affix, *tier, greenBudget);
+                rolls.push_back(roll);
+                usedGroups.insert(affix->Group);
+                continue;
+            }
+
             uint32 tierWeight = 0;
             for (ItemAffixTier const& tier : affix->Tiers)
                 if (tier.MinItemLevel <= itemLevel)
@@ -995,7 +1080,7 @@ std::vector<ItemAffixRoll> ForgeMgr::Roll(ItemTemplate const* base, uint8 itemLe
         }
     }
 
-    if (_budgetMode && !rolls.empty())
+    if (_budgetMode && !grades && !rolls.empty())
         SplitBudget(rolls, ItemBudget(base, quality < MAX_ITEM_QUALITY ? quality : base->Quality));
     return rolls;
 }
@@ -1260,8 +1345,8 @@ void ForgeMgr::SaveGenerated(GeneratedItem const& item, ItemAffixPool const& poo
         trans->Append("REPLACE INTO item_generated (entry, base_entry, item_level) VALUES ({}, {}, {})",
             item.Entry, item.BaseEntry, item.ItemLevel);
     for (std::size_t i = 0; i < item.Rolls.size(); ++i)
-        trans->Append("INSERT INTO item_generated_affix (entry, idx, affix_id, tier, value) VALUES ({}, {}, {}, {}, {})",
-            item.Entry, i, item.Rolls[i].AffixId, item.Rolls[i].Tier, item.Rolls[i].Value);
+        trans->Append("INSERT INTO item_generated_affix (entry, idx, affix_id, tier, value, grade) VALUES ({}, {}, {}, {}, {}, {})",
+            item.Entry, i, item.Rolls[i].AffixId, item.Rolls[i].Tier, item.Rolls[i].Value, item.Rolls[i].Grade);
     trans->Append("REPLACE INTO item_affix_pool_state (pool_id, next_unused) VALUES ({}, {})", pool.Id, pool.NextUnused);
     CharacterDatabase.CommitTransaction(trans);
 }

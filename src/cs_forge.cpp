@@ -141,8 +141,8 @@ public:
         {
             ItemAffix const* affix = sForgeMgr->GetAffix(roll.AffixId);
             ItemAffixTier const* tier = affix ? affix->GetTier(roll.Tier) : nullptr;
-            handler->PSendSysMessage("  {} {} T{} = {}", affix && affix->Kind == ITEM_AFFIX_PREFIX ? "prefix" : "suffix",
-                tier ? tier->Name : "?", roll.Tier, roll.Value);
+            handler->PSendSysMessage("  {} {} T{} = {}{}", affix && affix->Kind == ITEM_AFFIX_PREFIX ? "prefix" : "suffix",
+                tier ? tier->Name : "?", roll.Tier, roll.Value, roll.Grade ? " (grade " + std::to_string(roll.Grade) + ")" : "");
         }
         return true;
     }

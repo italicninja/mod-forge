@@ -54,6 +54,15 @@ Forge.SuffixWeights = "50,35,15"
 #                     0: the original rule (1-3 prefixes/suffixes by weight, quality from the affix count).
 #        Default:     1
 #
+#    Forge.AffixGrades
+#        Description: With BudgetMode = 1, how affix values roll. 1: PoE-style, each affix rolls its own grade
+#                     (1 best .. 4, 10/25/35/30%) and gets that grade's share of a green item's stat power for the
+#                     base's level and slot, so more affixes mean more power; the affix counts below then give
+#                     vanilla's quality ratios on average. The grade also names the affix (grade 1 = the highest
+#                     tier the item level unlocks). 0: affix values split the base item's own stat budget, so the
+#                     affix count doesn't change power (Forge.LegendaryBudget applies only here).
+#                     Existing items keep their values either way.
+#        Default:     1
 #    Forge.Count.Poor / Normal / Uncommon / Rare / Epic / Legendary
 #        Description: Affixes (prefixes + suffixes, at most 3 each) per quality, "min-max". 0 keeps the plain
 #                     item. Greys and whites only roll once their looks have Item.dbc pools.
@@ -74,6 +83,7 @@ Forge.SuffixWeights = "50,35,15"
 #        Default:     0.45, -3
 
 Forge.BudgetMode = 1
+Forge.AffixGrades = 1
 Forge.Count.Poor = "0-1"
 Forge.Count.Normal = "0-1"
 Forge.Count.Uncommon = "1-2"
