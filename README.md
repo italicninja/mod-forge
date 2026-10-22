@@ -39,9 +39,9 @@ An item keeps its base item's quality. The quality decides how many affixes roll
 | ⬜ Common (white) | 0–1 | |
 | 🟩 Uncommon (green) | 1–2 | |
 | 🟦 Rare (blue) | 2–3 | |
-| 🟪 Epic (purple) | 3–4 | |
+| 🟪 Epic (purple) | 3–4 | Also `Forge.EpicChance` of eligible blue drops from creature level `Forge.EpicMinLevel` (our realm: 15% from 21) |
 | 🟧 Legendary (orange) | 4–6 | `Forge.LegendaryChance` (0.5%) of eligible purple drops |
-| 🟨 Unique (light gold) | fixed | Bind on pickup, one per character, separate roll on its creature |
+| 🟨 Unique (light gold) | fixed | Bind on pickup, one per character, separate roll on its creature (`Forge.Uniques.Enable`) |
 
 Prefixes and suffixes go up to three each. Each affix rolls a grade, which sets its value and its name:
 
@@ -158,6 +158,8 @@ flowchart LR
 | `Forge.AffixGrades` | `1` | With the ladder: each affix rolls its own grade (PoE-style, more affixes = more power); `0` splits the base's stat budget |
 | `Forge.Count.<Quality>` | see above | Affix count range per quality, `"min-max"` |
 | `Forge.LegendaryChance` / `LegendaryBudget` | `0.5` / `1.3` | Legendary promotion (the budget multiplier only with `AffixGrades = 0`) |
+| `Forge.EpicChance` / `EpicMinLevel` | `0` / `21` | Blue to purple promotion from that creature level (vanilla has almost no purples below 40) |
+| `Forge.Uniques.Enable` | `1` | Uniques drop (`0`: no new ones; owned ones keep working) |
 | `Forge.BudgetPerLevel` / `BudgetOffset` | `0.45` / `-3` | Budget estimate for bases without stats |
 | `Forge.RecycleIntervalMinutes` / `RecycleGraceMinutes` | `30` / `120` | Entry recycling |
 | `Forge.Currency.Enable` | `1` | Orbs drop, and disenchanting forged items gives them (orbs always work) |

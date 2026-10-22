@@ -275,6 +275,9 @@ void ForgeMgr::LoadConfig()
         _countMax[q] = hi;
     }
     _legendaryChance = sConfigMgr->GetOption<float>("Forge.LegendaryChance", 0.5f);
+    _epicChance = sConfigMgr->GetOption<float>("Forge.EpicChance", 0.0f);
+    _epicMinLevel = sConfigMgr->GetOption<uint32>("Forge.EpicMinLevel", 21);
+    _uniquesEnabled = sConfigMgr->GetOption<bool>("Forge.Uniques.Enable", true);
     _legendaryBudget = sConfigMgr->GetOption<float>("Forge.LegendaryBudget", 1.3f);
     _budgetPerLevel = sConfigMgr->GetOption<float>("Forge.BudgetPerLevel", 0.45f);
     _budgetOffset = sConfigMgr->GetOption<float>("Forge.BudgetOffset", -3.0f);
@@ -1510,9 +1513,14 @@ void ForgeMgr::OnLootFilled(Loot& loot, LootStore const& store, Player* lootOwne
         ItemTemplate const* base = sObjectMgr->GetItemTemplate(item.itemid);
         if (!IsEligible(base) || !roll_chance_f(_chance))
             continue;
+        // Promotions up the quality ladder: purple to Legendary anywhere, blue to purple from Forge.EpicMinLevel
+        // (vanilla has almost no purples below 40). The budget scales with the quality (ItemBudget).
         uint8 quality = ITEM_AFFIX_QUALITY_UNSET;
         if (_budgetMode && base->Quality == ITEM_QUALITY_EPIC && roll_chance_f(_legendaryChance))
             quality = ITEM_QUALITY_LEGENDARY;
+        else if (_budgetMode && base->Quality == ITEM_QUALITY_RARE && itemLevel >= _epicMinLevel && _maxQuality >= ITEM_QUALITY_EPIC &&
+            roll_chance_f(_epicChance))
+            quality = ITEM_QUALITY_EPIC;
         if (uint32 entry = Generate(base, itemLevel, false, 0, 0, quality))
         {
             item.itemid = entry;
@@ -1523,7 +1531,7 @@ void ForgeMgr::OnLootFilled(Loot& loot, LootStore const& store, Player* lootOwne
     }
 
     // Uniques: a separate roll per kill of their creature, added to the normal loot.
-    if (&store == &LootTemplates_Creature && lootSource && lootSource->IsCreature())
+    if (_uniquesEnabled && &store == &LootTemplates_Creature && lootSource && lootSource->IsCreature())
     {
         auto range = _uniqueByCreature.equal_range(lootSource->ToCreature()->GetEntry());
         for (auto itr = range.first; itr != range.second; ++itr)

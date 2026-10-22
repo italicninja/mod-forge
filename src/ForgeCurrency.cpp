@@ -442,7 +442,7 @@ void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
             ItemTemplate const* base = item->GetTemplate();
             uint32 roll = urand(1, 100);
             for (auto const& unique : _uniques)
-                if (unique->Template && unique->BaseEntry == base->ItemId && roll <= CHANCE_UNIQUE_PCT &&
+                if (_uniquesEnabled && unique->Template && unique->BaseEntry == base->ItemId && roll <= CHANCE_UNIQUE_PCT &&
                     !player->HasItemCount(unique->Entry, 1, true))
                 {
                     replaceLater(unique->Entry, "Fortune smiles: your {} becomes {}!");

@@ -72,6 +72,17 @@ Forge.SuffixWeights = "50,35,15"
 #        Description: Percent of eligible purple drops that become Legendary (orange, 4-6 affixes).
 #        Default:     0.5
 #
+#    Forge.EpicChance / Forge.EpicMinLevel
+#        Description: Percent of eligible blue drops that become purple (3-4 affixes, purple budget), from
+#                     creature level EpicMinLevel up. Vanilla loot has almost no purples below level 40; this
+#                     lets them start earlier. Needs MaxQuality 4. 0 turns it off.
+#        Default:     0, 21
+#
+#    Forge.Uniques.Enable
+#        Description: Uniques drop from their creatures (and from Gambler's Coins). 0 stops new Uniques;
+#                     Uniques already owned keep working, and .forge unique still hands them out.
+#        Default:     1
+#
 #    Forge.LegendaryBudget
 #        Description: A Legendary's stat budget, as a multiple of its base item's.
 #        Default:     1.3
@@ -91,6 +102,9 @@ Forge.Count.Rare = "2-3"
 Forge.Count.Epic = "3-4"
 Forge.Count.Legendary = "4-6"
 Forge.LegendaryChance = 0.5
+Forge.EpicChance = 0
+Forge.EpicMinLevel = 21
+Forge.Uniques.Enable = 1
 Forge.LegendaryBudget = 1.3
 Forge.BudgetPerLevel = 0.45
 Forge.BudgetOffset = -3

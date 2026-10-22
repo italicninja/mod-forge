@@ -320,6 +320,9 @@ private:
     float _budgetPerLevel = 0.45f; // green big-slot budget ~ perLevel * ilvl + offset (audit 2026-10-13)
     float _budgetOffset = -3.0f;
     float _legendaryChance = 0.5f; // % of eligible purple drops promoted to Legendary
+    float _epicChance = 0.0f;      // % of eligible blue drops promoted to Epic, from creature level _epicMinLevel
+    uint32 _epicMinLevel = 21;
+    bool _uniquesEnabled = true;   // Uniques drop from their creatures and from Gambler's Coins
     uint32 _recycleIntervalMs = 30 * 60 * 1000;
     uint32 _recycleGraceMinutes = 120; // longer than PlayerSaveInterval, so items held in memory are saved first
     uint32 _recycleTimer = 0;
