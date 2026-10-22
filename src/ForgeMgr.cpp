@@ -74,11 +74,6 @@ namespace
             effect == ITEM_AFFIX_EFFECT_ATTACK_SPEED_PCT || effect == ITEM_AFFIX_EFFECT_BLOCK;
     }
 
-    bool IsSpellEffect(ItemAffixEffect effect)
-    {
-        return effect == ITEM_AFFIX_EFFECT_EQUIP_SPELL || effect == ITEM_AFFIX_EFFECT_HIT_SPELL;
-    }
-
     // Spell affix on a slot it doesn't fit (run speed off boots, fishing off hats and gloves).
     bool FitsSlot(ItemAffix const& affix, ItemTemplate const* proto)
     {
@@ -96,8 +91,20 @@ namespace
             if (spell.SpellId)
                 continue;
             spell.SpellId = spellId;
-            spell.SpellTrigger = effect == ITEM_AFFIX_EFFECT_HIT_SPELL ? ITEM_SPELLTRIGGER_CHANCE_ON_HIT : ITEM_SPELLTRIGGER_ON_EQUIP;
-            spell.SpellPPMRate = effect == ITEM_AFFIX_EFFECT_HIT_SPELL ? arg / 10.0f : 0.0f;
+            switch (effect)
+            {
+                case ITEM_AFFIX_EFFECT_HIT_SPELL:
+                    spell.SpellTrigger = ITEM_SPELLTRIGGER_CHANCE_ON_HIT;
+                    spell.SpellPPMRate = arg / 10.0f;
+                    break;
+                case ITEM_AFFIX_EFFECT_USE_SPELL:
+                    spell.SpellTrigger = ITEM_SPELLTRIGGER_ON_USE;
+                    spell.SpellCooldown = arg * IN_MILLISECONDS; // the client shows it on the tooltip
+                    break;
+                default:
+                    spell.SpellTrigger = ITEM_SPELLTRIGGER_ON_EQUIP;
+                    break;
+            }
             return;
         }
     }
@@ -843,6 +850,7 @@ std::unique_ptr<ItemTemplate> ForgeMgr::BuildUniqueTemplate(UniqueItem const& un
             case ITEM_AFFIX_EFFECT_ARMOR:  t->Armor += value; break;
             case ITEM_AFFIX_EFFECT_EQUIP_SPELL:
             case ITEM_AFFIX_EFFECT_HIT_SPELL:
+            case ITEM_AFFIX_EFFECT_USE_SPELL:
                 if (sSpellMgr->GetSpellInfo(uint32(value)))
                     AddItemSpell(*t, effect, arg, value);
                 else

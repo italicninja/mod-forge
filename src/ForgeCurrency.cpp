@@ -541,7 +541,7 @@ void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
                     rolls.push_back({ 0, uint8(i), std::get<2>(unique.Stats[i]) });
                 std::vector<std::size_t> stats;
                 for (std::size_t i = 0; i < unique.Stats.size(); ++i)
-                    if (std::get<0>(unique.Stats[i]) != ITEM_AFFIX_EFFECT_EQUIP_SPELL && std::get<0>(unique.Stats[i]) != ITEM_AFFIX_EFFECT_HIT_SPELL)
+                    if (!IsSpellEffect(std::get<0>(unique.Stats[i])))
                         stats.push_back(i);
                 if (outcome == 1)
                     for (std::size_t i : stats)
@@ -572,9 +572,7 @@ void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
                     UniqueItem const* unique = FindUniqueDef(g.UniqueKey);
                     std::vector<ItemAffixRoll*> stats;
                     for (ItemAffixRoll& roll : g.Rolls)
-                        if (unique && roll.Tier < unique->Stats.size() &&
-                            std::get<0>(unique->Stats[roll.Tier]) != ITEM_AFFIX_EFFECT_EQUIP_SPELL &&
-                            std::get<0>(unique->Stats[roll.Tier]) != ITEM_AFFIX_EFFECT_HIT_SPELL)
+                        if (unique && roll.Tier < unique->Stats.size() && !IsSpellEffect(std::get<0>(unique->Stats[roll.Tier])))
                             stats.push_back(&roll);
                     if (outcome == 1)
                         for (ItemAffixRoll* roll : stats)

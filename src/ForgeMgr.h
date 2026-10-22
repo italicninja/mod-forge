@@ -48,8 +48,15 @@ enum ItemAffixEffect : uint8
     // The highest tier the item level unlocks rolls; the affix takes a budget share without a value.
     ITEM_AFFIX_EFFECT_EQUIP_SPELL      = 7, // "Equip:"; arg = InventoryType bitmask (1 << type), 0 = any slot
     ITEM_AFFIX_EFFECT_HIT_SPELL        = 8, // "Chance on hit:"; arg = procs per minute x 10
+    ITEM_AFFIX_EFFECT_USE_SPELL        = 9, // "Use:"; arg = cooldown in seconds (Uniques only)
     MAX_ITEM_AFFIX_EFFECT
 };
+
+// Spell affixes and Unique spell lines carry a spell id, not a value to scale or reroll.
+inline bool IsSpellEffect(ItemAffixEffect effect)
+{
+    return effect >= ITEM_AFFIX_EFFECT_EQUIP_SPELL && effect < MAX_ITEM_AFFIX_EFFECT;
+}
 
 // item_affix.item_mask
 enum ItemAffixMask : uint32

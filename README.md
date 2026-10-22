@@ -21,7 +21,7 @@ Every eligible drop is forged into a one-of-a-kind item, with its own name, stat
 | **Affixed items** | The base item keeps its look, armor and weapon damage. Its stats are replaced by prefixes and suffixes. Each affix rolls its own grade, a share of a green item's vanilla stat power, so more affixes mean more power while the averages stay at vanilla's quality ratios. *Vicious Chain Leggings of the Bear.* |
 | **Spell affixes** | One "Equip:" effect or "Chance on hit:" proc per item, taken from existing Spell.dbc spells, so the client draws the line itself. |
 | **Legendaries** | A small share of purple drops turn orange, with 4–6 affixes. |
-| **Uniques** | Hand-authored items in light gold, each dropped by one named creature, with fixed stats and flavour text. |
+| **Uniques** | Hand-authored items in light gold, one per dungeon-final, raid and world boss, with fixed stats, "Equip:", "Chance on hit:" and "Use:" spells, and flavour text. |
 | **Crafting orbs** | 19 droppable orbs, PoE's currency: reroll an item, add or remove affixes, reroll the values, forge a plain item, or corrupt it. See [Crafting orbs](#crafting-orbs). |
 
 <div align="center">
