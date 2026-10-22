@@ -58,9 +58,22 @@ namespace
     class ForgePlayerScript : public PlayerScript
     {
     public:
-        ForgePlayerScript() : PlayerScript("ForgePlayerScript", {PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_AFTER_SET_VISIBLE_ITEM_SLOT}) { }
+        ForgePlayerScript() : PlayerScript("ForgePlayerScript", {PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_AFTER_SET_VISIBLE_ITEM_SLOT,
+            PLAYERHOOK_CAN_PLAYER_USE_PRIVATE_CHAT}) { }
 
-        void OnPlayerLogin(Player* player) override { sForgeMgr->UpdateTalentBonuses(player); }
+        using PlayerScript::OnPlayerCanUseChat;
+
+        void OnPlayerLogin(Player* player) override { sForgeMgr->UpdateTalentBonuses(player, 0xFF, nullptr, true); }
+
+        // The ForgeTalents addon asks for the bonuses (after a /reload) with an addon whisper to the player itself.
+        bool OnPlayerCanUseChat(Player* player, uint32 /*type*/, uint32 language, std::string& msg, Player* receiver) override
+        {
+            if (language != LANG_ADDON || receiver != player || !msg.starts_with(std::string(FORGE_TALENT_PREFIX) + "\t"))
+                return true;
+            if (sForgeMgr->TalentAffixesEnabled())
+                sForgeMgr->SendTalentBonuses(player);
+            return false;
+        }
 
         void OnPlayerAfterSetVisibleItemSlot(Player* player, uint8 slot, Item* item) override
         {

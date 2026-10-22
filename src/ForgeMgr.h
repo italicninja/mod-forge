@@ -212,6 +212,8 @@ struct UniqueItem
     }
 };
 
+constexpr char const* FORGE_TALENT_PREFIX = "FORGE_TB";
+
 class ForgeMgr
 {
 public:
@@ -243,7 +245,11 @@ public:
 
     // Talent affixes: set player's talent rank bonuses from the items equipped. slot holds item (nullptr: being
     // emptied) whatever the equipment says yet. Nothing outside the world; OnPlayerLogin sets them.
-    void UpdateTalentBonuses(Player* player, uint8 slot = 0xFF, Item* item = nullptr) const;
+    // When they change (or send), they go to the client addon too (SendTalentBonuses).
+    void UpdateTalentBonuses(Player* player, uint8 slot = 0xFF, Item* item = nullptr, bool send = false) const;
+    // The client addon ForgeTalents (mod-forge/addon) shows them in the talent window: an addon whisper to the player,
+    // FORGE_TALENT_PREFIX "\t26=1,30=2" (talent id = ranks; empty: none). The addon asks with "?" after a /reload.
+    void SendTalentBonuses(Player* player) const;
     bool TalentAffixesEnabled() const { return _talentAffixes; }
 
     // Orb of Upheaval (docs/forge-currency.md): reroll every affix of a generated item under the same entry, keeping

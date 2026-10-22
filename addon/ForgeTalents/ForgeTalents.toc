@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: ForgeTalents
+## Notes: Talent ranks from Forge gear ("+1 to Improved Fireball") in the talent window.
+## Author: mod-forge
+## Version: 0.1.0
+ForgeTalents.lua

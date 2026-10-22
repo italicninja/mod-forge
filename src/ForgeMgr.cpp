@@ -6,6 +6,7 @@
 
 #include "ForgeMgr.h"
 #include "Bag.h"
+#include "Chat.h"
 #include "Config.h"
 #include "Creature.h"
 #include "DBCStores.h"
@@ -1451,7 +1452,7 @@ uint32 ForgeMgr::GenerateWithAffix(ItemTemplate const* base, uint8 itemLevel, ui
     return CreateGenerated(base, itemLevel, quality, std::move(rolls));
 }
 
-void ForgeMgr::UpdateTalentBonuses(Player* player, uint8 slot, Item* item) const
+void ForgeMgr::UpdateTalentBonuses(Player* player, uint8 slot, Item* item, bool send) const
 {
     if (!player->IsInWorld())
         return;
@@ -1476,11 +1477,32 @@ void ForgeMgr::UpdateTalentBonuses(Player* player, uint8 slot, Item* item) const
     for (auto const& [talentId, bonus] : player->GetTalentRankBonuses())
         if (!bonuses.count(talentId))
             gone.push_back(talentId);
+    bool changed = !gone.empty();
     for (uint32 talentId : gone)
         player->SetTalentRankBonus(talentId, 0);
     for (auto const& [talentId, bonus] : bonuses)
         if (player->GetTalentRankBonus(talentId) != bonus)
+        {
             player->SetTalentRankBonus(talentId, bonus);
+            changed = true;
+        }
+
+    if (changed || (send && _talentAffixes))
+        SendTalentBonuses(player);
+}
+
+void ForgeMgr::SendTalentBonuses(Player* player) const
+{
+    std::string msg = std::string(FORGE_TALENT_PREFIX) + "\t";
+    bool first = true;
+    for (auto const& [talentId, bonus] : player->GetTalentRankBonuses())
+    {
+        msg += Acore::StringFormat("{}{}={}", first ? "" : ",", talentId, bonus);
+        first = false;
+    }
+    WorldPacket data;
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, msg);
+    player->SendDirectMessage(&data);
 }
 
 uint32 ForgeMgr::CreateGenerated(ItemTemplate const* base, uint8 itemLevel, uint8 quality, std::vector<ItemAffixRoll> rolls,
