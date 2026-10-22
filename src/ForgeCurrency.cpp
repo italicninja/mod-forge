@@ -30,7 +30,7 @@ namespace
     ForgeOrbKind ParseOrbKind(std::string const& kind)
     {
         static char const* const names[MAX_FORGE_ORB] = { "transmute", "alteration", "augment", "scour", "alchemy",
-            "chance", "chaos", "regal", "annul", "vaal", "divine", "exalt", "essence" };
+            "chance", "chaos", "regal", "annul", "vaal", "divine", "exalt", "essence", "raise" };
         for (uint8 i = 0; i < MAX_FORGE_ORB; ++i)
             if (kind == names[i])
                 return ForgeOrbKind(i);
@@ -59,6 +59,7 @@ namespace
 void ForgeMgr::LoadCurrency()
 {
     _orbs.clear();
+    _raiseOrbEntry = 0;
     //                                                   0         1           2     3    4
     QueryResult result = WorldDatabase.Query("SELECT spell_id, item_entry, kind, arg, drop_weight FROM forge_currency");
     if (!result)
@@ -80,6 +81,8 @@ void ForgeMgr::LoadCurrency()
             continue;
         }
         _orbs[orb.SpellId] = orb;
+        if (orb.Kind == FORGE_ORB_RAISE)
+            _raiseOrbEntry = orb.ItemEntry;
     } while (result->NextRow());
 }
 
@@ -298,6 +301,19 @@ std::string ForgeMgr::CheckOrb(ForgeOrb const& orb, Player* player, Item* item) 
             return "That item has no values to reweigh.";
         case FORGE_ORB_VAAL:
             return forged || uniqueCopy || sharedUnique ? "" : "Only forged items and Uniques can be corrupted.";
+        case FORGE_ORB_RAISE:
+        {
+            UniqueItem const* unique = sharedUnique ? shared->second : uniqueCopy ? FindUniqueDef(generated->UniqueKey) : nullptr;
+            if (!unique)
+                return "Only Uniques can be raised.";
+            if (!unique->RaisedItemLevel)
+                return "That Unique is already at its full strength.";
+            if (uniqueCopy && (generated->Flags & GENERATED_ITEM_FLAG_RAISED))
+                return "That Unique has already been raised.";
+            if (item->IsEquipped() && player->GetLevel() < unique->RaisedRequiredLevel)
+                return "Unequip it first: raised, it needs level " + std::to_string(unique->RaisedRequiredLevel) + ".";
+            return "";
+        }
         default:
             return "This orb does nothing.";
     }
@@ -570,13 +586,14 @@ void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
                 if (!g.UniqueKey.empty())
                 {
                     UniqueItem const* unique = FindUniqueDef(g.UniqueKey);
+                    bool raised = g.Flags & GENERATED_ITEM_FLAG_RAISED;
                     std::vector<ItemAffixRoll*> stats;
                     for (ItemAffixRoll& roll : g.Rolls)
                         if (unique && roll.Tier < unique->Stats.size() && !IsSpellEffect(std::get<0>(unique->Stats[roll.Tier])))
                             stats.push_back(&roll);
                     if (outcome == 1)
                         for (ItemAffixRoll* roll : stats)
-                            roll->Value = ScaleValue(std::get<2>(unique->Stats[roll->Tier]), frand(UNIQUE_REROLL_MIN, UNIQUE_REROLL_MAX));
+                            roll->Value = ScaleValue(unique->StatValue(roll->Tier, raised), frand(UNIQUE_REROLL_MIN, UNIQUE_REROLL_MAX));
                     else if ((outcome == 2 || outcome == 3) && !stats.empty())
                     {
                         ItemAffixRoll* roll = stats[urand(0, stats.size() - 1)];
@@ -621,6 +638,45 @@ void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
                     "Felfire reshapes your {}: {}.", "Felfire empowers your {}: {}.", "Felfire scars your {}: {}." };
                 message = outcomes[outcome];
             }
+            break;
+        }
+        case FORGE_ORB_RAISE:
+        {
+            std::string raisedMessage;
+            // A Unique at its shared entry gets its own copy at the raised values.
+            if (auto shared = _uniqueByEntry.find(entry); shared != _uniqueByEntry.end())
+            {
+                UniqueItem const& unique = *shared->second;
+                ItemTemplate const* base = sObjectMgr->GetItemTemplate(unique.BaseEntry);
+                std::vector<ItemAffixRoll> rolls;
+                for (std::size_t i = 0; i < unique.Stats.size(); ++i)
+                    rolls.push_back({ 0, uint8(i), unique.StatValue(i, true) });
+                uint32 newEntry = base ? CreateGenerated(base, unique.RaisedItemLevel, ITEM_QUALITY_ARTIFACT, std::move(rolls), unique.Key,
+                    GENERATED_ITEM_FLAG_RAISED) : 0;
+                if (!newEntry)
+                {
+                    chat.SendNotification("Nothing happens.");
+                    return;
+                }
+                replaceLater(newEntry, "Time runs forward for your {}. {} wakes at level " + std::to_string(unique.RaisedRequiredLevel) + ".");
+                return;
+            }
+            // A copy (Tear of the Naaru) keeps how far each value rolled from the Unique's own.
+            changeInPlace([&](GeneratedItem& g)
+            {
+                UniqueItem const* unique = FindUniqueDef(g.UniqueKey);
+                if (!unique || !unique->RaisedItemLevel)
+                    return false;
+                for (ItemAffixRoll& roll : g.Rolls)
+                    if (roll.Tier < unique->Stats.size() && !IsSpellEffect(std::get<0>(unique->Stats[roll.Tier])))
+                        roll.Value = ScaleValue(unique->StatValue(roll.Tier, true),
+                            float(roll.Value) / float(std::max<int32>(1, unique->StatValue(roll.Tier, false))));
+                g.ItemLevel = unique->RaisedItemLevel;
+                g.Flags |= GENERATED_ITEM_FLAG_RAISED;
+                raisedMessage = "Time runs forward for your {}. {} wakes at level " + std::to_string(unique->RaisedRequiredLevel) + ".";
+                return true;
+            });
+            message = raisedMessage;
             break;
         }
         default:

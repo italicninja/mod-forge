@@ -86,10 +86,11 @@ equipped. An orb that doesn't fit the item says why and stays in your bags.
 | <img src="docs/images/orbs/inv_misc_orb_05.png" width="24"> | **Felfire Orb** | Vaal | Corrupts a forged item or a Unique, with an unpredictable result. Corrupted items cannot be changed again. | `60010` | rare |
 | <img src="docs/images/orbs/inv_enchant_dustarcane.png" width="24"> | **Scouring Dust** | Scouring | Strips every affix from a forged item, leaving the plain base. | `60005` | common |
 | <img src="docs/images/orbs/inv_enchant_essenceastrallarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencemagiclarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essenceeternallarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencenetherlarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencemysticallarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencearcanelarge.png" width="24"> <img src="docs/images/orbs/inv_enchant_essencecosmicgreater.png" width="24"> | **Essences**: Bear (Strength), Falcon (Agility), Mammoth (Stamina), Savant (Intellect), Owl (Spirit), Warlord (Attack Power), Archmage (Spell Power) | Essence | Rerolls a plain or forged weapon or piece of armor, guaranteeing that stat at grade 1. | `60013`–`60019` | very rare |
+| <img src="docs/images/orbs/inv_misc_dust_infinite.png" width="24"> | **Sands of Nozdormu** | | Raises a Unique below level 60 to item level 63 and required level 60, with stats, armor and weapon damage to match. Drops only from bosses that guard a Unique, as often as their Unique. | `60020` | as rare as a Unique |
 
-No orb works on a Corrupted item. Only the Tear of the Naaru and the Felfire Orb work on Uniques: the Unique gets its
-own copy, with values rerolled ×0.8–1.2 (Tear) or one of nothing / a reroll / one stat ×1.25 / one stat ×0.75
-(Felfire). On a forged item the Felfire Orb rolls one of four, each a 1 in 4: nothing, new values, an affix past the
+No orb works on a Corrupted item. Only the Tear of the Naaru, the Felfire Orb and the Sands of Nozdormu work on
+Uniques: the Unique gets its own copy, with values rerolled ×0.8–1.2 (Tear), one of nothing / a reroll / one stat
+×1.25 / one stat ×0.75 (Felfire), or raised (Sands; a rerolled copy keeps how far each value rolled). On a forged item the Felfire Orb rolls one of four, each a 1 in 4: nothing, new values, an affix past the
 quality's count, or one affix fewer.
 
 ### Examples

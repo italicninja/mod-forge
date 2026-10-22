@@ -129,6 +129,7 @@ struct ItemAffixPool
 enum GeneratedItemFlags : uint8
 {
     GENERATED_ITEM_FLAG_CORRUPTED = 0x01, // Felfire Orb: no orb works on it any more
+    GENERATED_ITEM_FLAG_RAISED    = 0x02, // Sands of Nozdormu: a Unique copy at its raised item and required level
 };
 
 // Crafting orbs (docs/forge-currency.md), world table forge_currency.kind
@@ -147,6 +148,7 @@ enum ForgeOrbKind : uint8
     FORGE_ORB_DIVINE,     // Tear of the Naaru: same affixes, new values (forged items and Uniques)
     FORGE_ORB_EXALT,      // Eye of the Titans: add an affix to a Rare or better forged item with room
     FORGE_ORB_ESSENCE,    // Essence: reroll with affix arg guaranteed at grade 1 (plain or forged)
+    FORGE_ORB_RAISE,      // Sands of Nozdormu: a Unique below level 60 to its raised form (drops from Unique bosses only)
     MAX_FORGE_ORB
 };
 
@@ -172,8 +174,8 @@ struct GeneratedItem
     std::unique_ptr<ItemTemplate> Template;
     bool Preview = false; // CreatePreview: shown as a reward, never handed out, not saved
     uint8 Flags = 0;       // GeneratedItemFlags
-    // A Unique given its own entry by an orb (Tear of the Naaru, Felfire Orb): Rolls hold its stats' values,
-    // Tier = index into the Unique's Stats, AffixId 0.
+    // A Unique given its own entry by an orb (Tear of the Naaru, Felfire Orb, Sands of Nozdormu): Rolls hold its
+    // stats' values, Tier = index into the Unique's Stats, AffixId 0. ItemLevel counts only when raised.
     std::string UniqueKey;
 };
 
@@ -192,6 +194,19 @@ struct UniqueItem
     float Chance = 0.0f; // % per kill
     std::vector<std::tuple<ItemAffixEffect, int32, int32>> Stats; // effect, arg, value
     std::unique_ptr<ItemTemplate> Template;
+    // Sands of Nozdormu: the raised item and required level (0: can't be raised), each line's value there, and the
+    // base's armor, block and weapon DPS there (median of stock blue items of its type; 0 = scale by item level).
+    uint8 RaisedItemLevel = 0;
+    uint8 RaisedRequiredLevel = 0;
+    std::vector<int32> RaisedValues;
+    uint32 RaisedArmor = 0;
+    uint32 RaisedBlock = 0;
+    float RaisedDps = 0.0f;
+
+    int32 StatValue(std::size_t i, bool raised) const
+    {
+        return raised && i < RaisedValues.size() ? RaisedValues[i] : std::get<2>(Stats[i]);
+    }
 };
 
 class ForgeMgr
@@ -286,9 +301,12 @@ private:
     float ItemBudget(ItemTemplate const* base, uint8 quality) const;
     std::unique_ptr<ItemTemplate> BuildTemplate(uint32 entry, ItemTemplate const& base, uint8 itemLevel,
         std::vector<ItemAffixRoll> const& rolls, uint32 displayOverride, uint8 quality) const;
-    // A Unique's template at entry; values (a Unique-derived item's rolls) override its stats' values.
+    // A Unique's template at entry; values (a Unique-derived item's rolls) override its stats' values. raised: at the
+    // Unique's raised item and required level, with armor, block and damage to match.
     std::unique_ptr<ItemTemplate> BuildUniqueTemplate(UniqueItem const& unique, ItemTemplate const& base, uint32 entry,
-        uint32 displayOverride, std::vector<ItemAffixRoll> const* values) const;
+        uint32 displayOverride, std::vector<ItemAffixRoll> const* values, bool raised = false) const;
+    // A raisable Unique's armor, block and weapon DPS at its raised item level, from stock blue items of base's type.
+    void FindRaisedBase(UniqueItem& unique, ItemTemplate const& base) const;
     // The template for a generated item: affixes or Unique-derived, plus the Corrupted line.
     std::unique_ptr<ItemTemplate> MakeTemplate(GeneratedItem const& item, ItemTemplate const& base, uint32 displayOverride) const;
     UniqueItem const* FindUniqueDef(std::string const& key) const;
@@ -363,6 +381,7 @@ private:
     float _orbBossMultiplier = 10.0f;
     float _orbDisenchantChance = 50.0f; // % per disenchanted forged item
     uint32 PickOrbEntry() const;      // a random orb item by drop weight, or 0
+    uint32 _raiseOrbEntry = 0;        // Sands of Nozdormu's item: drops only from Unique bosses, at their Unique's chance
 };
 
 #define sForgeMgr ForgeMgr::instance()

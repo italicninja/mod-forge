@@ -734,8 +734,9 @@ void ForgeMgr::LoadUniqueDefs()
     _uniqueByCreature.clear();
 
     //                                                   0    1      2           3           4               5            6             7
-    QueryResult result = WorldDatabase.Query("SELECT `key`, name, base_entry, item_level, required_level, description, creature_entry, chance "
-        "FROM item_unique");
+    QueryResult result = WorldDatabase.Query("SELECT `key`, name, base_entry, item_level, required_level, description, creature_entry, chance, "
+    //   8                  9
+        "raised_item_level, raised_required_level FROM item_unique");
     if (!result)
         return;
 
@@ -752,12 +753,15 @@ void ForgeMgr::LoadUniqueDefs()
         unique->Description = fields[5].Get<std::string>();
         unique->CreatureEntry = fields[6].Get<uint32>();
         unique->Chance = fields[7].Get<float>();
+        unique->RaisedItemLevel = fields[8].Get<uint8>();
+        unique->RaisedRequiredLevel = fields[9].Get<uint8>();
         byKey[unique->Key] = unique.get();
         _uniques.push_back(std::move(unique));
     } while (result->NextRow());
 
-    //                                                 0            1    2       3           4
-    if (QueryResult stats = WorldDatabase.Query("SELECT unique_key, idx, effect, effect_arg, value FROM item_unique_stat ORDER BY unique_key, idx"))
+    //                                                 0            1    2       3           4      5
+    if (QueryResult stats = WorldDatabase.Query("SELECT unique_key, idx, effect, effect_arg, value, raised_value FROM item_unique_stat "
+        "ORDER BY unique_key, idx"))
     {
         do
         {
@@ -767,8 +771,19 @@ void ForgeMgr::LoadUniqueDefs()
             if (itr == byKey.end() || effect >= MAX_ITEM_AFFIX_EFFECT)
                 continue;
             itr->second->Stats.emplace_back(ItemAffixEffect(effect), fields[3].Get<int32>(), fields[4].Get<int32>());
+            itr->second->RaisedValues.push_back(fields[5].Get<int32>());
         } while (stats->NextRow());
     }
+
+    // Raised copies are built by LoadGenerated, before FinishUniques: their armor and damage are needed now.
+    for (auto const& unique : _uniques)
+        if (unique->RaisedItemLevel > unique->ItemLevel)
+        {
+            if (ItemTemplate const* base = sObjectMgr->GetItemTemplate(unique->BaseEntry))
+                FindRaisedBase(*unique, *base);
+        }
+        else
+            unique->RaisedItemLevel = 0;
 
     if (QueryResult state = CharacterDatabase.Query("SELECT unique_key, entry FROM item_unique_state"))
     {
@@ -819,19 +834,81 @@ void ForgeMgr::FinishUniques()
     }
 }
 
-std::unique_ptr<ItemTemplate> ForgeMgr::BuildUniqueTemplate(UniqueItem const& unique, ItemTemplate const& base, uint32 entry,
-    uint32 displayOverride, std::vector<ItemAffixRoll> const* values) const
+void ForgeMgr::FindRaisedBase(UniqueItem& unique, ItemTemplate const& base) const
 {
+    // Stock blues of the same kind at the raised item level: the window widens, then a weapon may be any hand.
+    auto median = [](std::vector<float>& v) -> float
+    {
+        if (v.empty())
+            return 0.0f;
+        std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+        return v[v.size() / 2];
+    };
+    bool weapon = base.Class == ITEM_CLASS_WEAPON && base.Damage[0].DamageMax > 0 && base.Delay;
+    for (uint32 pass = 0; pass < 3; ++pass)
+    {
+        uint32 window = pass ? 5 : 2;
+        bool anyHand = pass == 2;
+        std::vector<float> armor, block, dps;
+        for (auto const& [entry, proto] : *sObjectMgr->GetItemTemplateStore())
+        {
+            if (proto.Quality != ITEM_QUALITY_RARE || proto.Class != base.Class || proto.SubClass != base.SubClass ||
+                (!anyHand && proto.InventoryType != base.InventoryType) ||
+                std::abs(int32(proto.ItemLevel) - int32(unique.RaisedItemLevel)) > int32(window))
+                continue;
+            if (base.Armor && proto.Armor)
+                armor.push_back(float(proto.Armor));
+            if (base.Block && proto.Block)
+                block.push_back(float(proto.Block));
+            if (weapon && proto.Damage[0].DamageMax > 0 && proto.Delay)
+                dps.push_back((proto.Damage[0].DamageMin + proto.Damage[0].DamageMax) / 2.0f / (proto.Delay / 1000.0f));
+        }
+        if ((base.Armor && armor.empty()) || (base.Block && block.empty()) || (weapon && dps.empty()))
+            continue;
+        unique.RaisedArmor = uint32(median(armor));
+        unique.RaisedBlock = uint32(median(block));
+        unique.RaisedDps = median(dps);
+        return;
+    }
+    LOG_WARN("sql.sql", "Table `item_unique`: no stock blue items like '{}' (base {}) near item level {}; raised, its armor and "
+        "damage scale with the item level.", unique.Key, unique.BaseEntry, unique.RaisedItemLevel);
+}
+
+std::unique_ptr<ItemTemplate> ForgeMgr::BuildUniqueTemplate(UniqueItem const& unique, ItemTemplate const& base, uint32 entry,
+    uint32 displayOverride, std::vector<ItemAffixRoll> const* values, bool raised) const
+{
+    raised = raised && unique.RaisedItemLevel;
     std::unique_ptr<ItemTemplate> t = BuildTemplate(entry, base, unique.ItemLevel, {}, displayOverride, ITEM_QUALITY_ARTIFACT);
     t->Name1 = unique.Name;
     t->Description = unique.Description;
-    t->ItemLevel = std::max<uint32>(unique.ItemLevel, 1);
-    t->RequiredLevel = std::min<uint32>(unique.RequiredLevel, sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
+    t->ItemLevel = std::max<uint32>(raised ? unique.RaisedItemLevel : unique.ItemLevel, 1);
+    t->RequiredLevel = std::min<uint32>(raised ? unique.RaisedRequiredLevel : unique.RequiredLevel,
+        sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
     t->Bonding = BIND_WHEN_PICKED_UP;
     t->MaxCount = 1; // "Unique": one per character
+    if (raised)
+    {
+        // Armor, block and damage of a stock blue at the new item level (FindRaisedBase), else scaled by item level.
+        float scale = float(unique.RaisedItemLevel) / float(std::max<uint32>(base.ItemLevel, 1));
+        if (base.Armor)
+            t->Armor = unique.RaisedArmor ? unique.RaisedArmor : uint32(base.Armor * scale);
+        if (base.Block)
+            t->Block = unique.RaisedBlock ? unique.RaisedBlock : uint32(base.Block * scale);
+        float average = (base.Damage[0].DamageMin + base.Damage[0].DamageMax) / 2.0f;
+        if (average > 0.0f && base.Delay)
+        {
+            float factor = unique.RaisedDps ? unique.RaisedDps * (base.Delay / 1000.0f) / average : scale;
+            for (_Damage& damage : t->Damage)
+            {
+                damage.DamageMin = std::floor(damage.DamageMin * factor);
+                damage.DamageMax = std::ceil(damage.DamageMax * factor);
+            }
+        }
+    }
     for (std::size_t i = 0; i < unique.Stats.size(); ++i)
     {
         auto [effect, arg, value] = unique.Stats[i];
+        value = unique.StatValue(i, raised);
         if (values && !IsSpellEffect(effect))
             for (ItemAffixRoll const& roll : *values)
                 if (roll.Tier == i)
@@ -876,7 +953,7 @@ std::unique_ptr<ItemTemplate> ForgeMgr::MakeTemplate(GeneratedItem const& item, 
     std::unique_ptr<ItemTemplate> t;
     UniqueItem const* unique = item.UniqueKey.empty() ? nullptr : FindUniqueDef(item.UniqueKey);
     if (unique)
-        t = BuildUniqueTemplate(*unique, base, item.Entry, displayOverride, &item.Rolls);
+        t = BuildUniqueTemplate(*unique, base, item.Entry, displayOverride, &item.Rolls, item.Flags & GENERATED_ITEM_FLAG_RAISED);
     else
         t = BuildTemplate(item.Entry, base, item.ItemLevel, item.Rolls, displayOverride, item.Quality);
     if (item.Flags & GENERATED_ITEM_FLAG_CORRUPTED)
@@ -1538,16 +1615,23 @@ void ForgeMgr::OnLootFilled(Loot& loot, LootStore const& store, Player* lootOwne
         }
     }
 
-    // Uniques: a separate roll per kill of their creature, added to the normal loot.
+    // Uniques: a separate roll per kill of their creature, added to the normal loot. Sands of Nozdormu: one more
+    // roll per kill, at the creature's Unique chance (the highest, if it has several).
     if (_uniquesEnabled && &store == &LootTemplates_Creature && lootSource && lootSource->IsCreature())
     {
         auto range = _uniqueByCreature.equal_range(lootSource->ToCreature()->GetEntry());
+        float sandsChance = 0.0f;
         for (auto itr = range.first; itr != range.second; ++itr)
+        {
+            sandsChance = std::max(sandsChance, itr->second->Chance);
             if (roll_chance_f(itr->second->Chance))
             {
                 loot.AddItem(LootStoreItem(itr->second->Entry, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1));
                 created.push_back(itr->second->Entry);
             }
+        }
+        if (_currencyEnabled && _raiseOrbEntry && sandsChance > 0.0f && roll_chance_f(sandsChance))
+            loot.AddItem(LootStoreItem(_raiseOrbEntry, 0, 100.0f, false, LOOT_MODE_DEFAULT, 0, 1, 1));
     }
 
     if (created.empty())
