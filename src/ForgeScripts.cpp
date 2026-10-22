@@ -10,6 +10,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "PlayerScript.h"
 #include "WorldScript.h"
 
 // Hooks into the core (generic ones from core patch 0001-generated-item-hooks); the logic is ForgeMgr's.
@@ -51,10 +52,27 @@ namespace
             sForgeMgr->OnLootFilled(*loot, store, lootOwner, source);
         }
     };
+
+    // Talent affixes: the bonuses follow the equipment. Every equip and unequip (also a destroyed or swapped item)
+    // goes through SetVisibleItemSlot; loading the inventory happens outside the world, so login sets them all.
+    class ForgePlayerScript : public PlayerScript
+    {
+    public:
+        ForgePlayerScript() : PlayerScript("ForgePlayerScript", {PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_AFTER_SET_VISIBLE_ITEM_SLOT}) { }
+
+        void OnPlayerLogin(Player* player) override { sForgeMgr->UpdateTalentBonuses(player); }
+
+        void OnPlayerAfterSetVisibleItemSlot(Player* player, uint8 slot, Item* item) override
+        {
+            if (sForgeMgr->TalentAffixesEnabled() || !player->GetTalentRankBonuses().empty())
+                sForgeMgr->UpdateTalentBonuses(player, slot, item);
+        }
+    };
 }
 
 void AddForgeScripts()
 {
     new ForgeWorldScript();
     new ForgeMiscScript();
+    new ForgePlayerScript();
 }

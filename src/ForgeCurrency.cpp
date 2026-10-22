@@ -416,7 +416,10 @@ void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
             }
         }
         if (equipped)
+        {
             player->_ApplyItemMods(item, item->GetSlot(), true);
+            UpdateTalentBonuses(player);
+        }
         if (changed)
             SendTemplate(player, entry);
         return changed;
@@ -504,7 +507,10 @@ void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
                 player->_ApplyItemMods(item, item->GetSlot(), false);
             bool rerolled = Reroll(entry);
             if (equipped)
+            {
                 player->_ApplyItemMods(item, item->GetSlot(), true);
+                UpdateTalentBonuses(player);
+            }
             if (rerolled)
                 SendTemplate(player, entry);
             message = "Your {} is reforged into {}.";

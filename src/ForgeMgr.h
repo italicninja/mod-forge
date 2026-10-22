@@ -49,13 +49,16 @@ enum ItemAffixEffect : uint8
     ITEM_AFFIX_EFFECT_EQUIP_SPELL      = 7, // "Equip:"; arg = InventoryType bitmask (1 << type), 0 = any slot
     ITEM_AFFIX_EFFECT_HIT_SPELL        = 8, // "Chance on hit:"; arg = procs per minute x 10
     ITEM_AFFIX_EFFECT_USE_SPELL        = 9, // "Use:"; arg = cooldown in seconds (Uniques only)
+    // Talent affixes (Forge.TalentAffixes.Enable): +value ranks to the talent, past its last rank, or granted with no
+    // points spent (core Player::SetTalentRankBonus); arg = Talent.dbc id. A line in the item's description.
+    ITEM_AFFIX_EFFECT_TALENT           = 10,
     MAX_ITEM_AFFIX_EFFECT
 };
 
 // Spell affixes and Unique spell lines carry a spell id, not a value to scale or reroll.
 inline bool IsSpellEffect(ItemAffixEffect effect)
 {
-    return effect >= ITEM_AFFIX_EFFECT_EQUIP_SPELL && effect < MAX_ITEM_AFFIX_EFFECT;
+    return effect >= ITEM_AFFIX_EFFECT_EQUIP_SPELL && effect <= ITEM_AFFIX_EFFECT_USE_SPELL;
 }
 
 // item_affix.item_mask
@@ -234,6 +237,14 @@ public:
     // eligible, no free pool entry, nothing rolled; a 0-affix roll keeps the plain item).
     uint32 Generate(ItemTemplate const* base, uint8 itemLevel, bool force = false, uint8 prefixes = 0, uint8 suffixes = 0,
         uint8 quality = ITEM_AFFIX_QUALITY_UNSET);
+    // Roll base with affixId at grade 1 plus the rest of its quality's count (.forge with), even an affix of weight 0.
+    // Returns the new entry, or 0 (the affix doesn't fit base or item level, no free pool entry).
+    uint32 GenerateWithAffix(ItemTemplate const* base, uint8 itemLevel, uint32 affixId);
+
+    // Talent affixes: set player's talent rank bonuses from the items equipped. slot holds item (nullptr: being
+    // emptied) whatever the equipment says yet. Nothing outside the world; OnPlayerLogin sets them.
+    void UpdateTalentBonuses(Player* player, uint8 slot = 0xFF, Item* item = nullptr) const;
+    bool TalentAffixesEnabled() const { return _talentAffixes; }
 
     // Orb of Upheaval (docs/forge-currency.md): reroll every affix of a generated item under the same entry, keeping
     // its base, item level and quality (the count rerolls within the quality's range). The old template is retired.
@@ -348,6 +359,7 @@ private:
     float _epicChance = 0.0f;      // % of eligible blue drops promoted to Epic, from creature level _epicMinLevel
     uint32 _epicMinLevel = 21;
     bool _uniquesEnabled = true;   // Uniques drop from their creatures and from Gambler's Coins
+    bool _talentAffixes = false;   // talent affixes roll and work (Forge.TalentAffixes.Enable)
     uint32 _recycleIntervalMs = 30 * 60 * 1000;
     uint32 _recycleGraceMinutes = 120; // longer than PlayerSaveInterval, so items held in memory are saved first
     uint32 _recycleTimer = 0;

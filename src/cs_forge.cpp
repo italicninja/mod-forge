@@ -28,6 +28,7 @@ public:
             { "unique",    HandleAffixUniqueCommand,    rbac::RBAC_PERM_COMMAND_ADDITEM, Console::No },
             { "info",      HandleAffixInfoCommand,      rbac::RBAC_PERM_COMMAND_ADDITEM, Console::Yes },
             { "reroll",    HandleAffixRerollCommand,    rbac::RBAC_PERM_COMMAND_ADDITEM, Console::No },
+            { "with",      HandleAffixWithCommand,      rbac::RBAC_PERM_COMMAND_ADDITEM, Console::No },
         };
         static ChatCommandTable commandTable =
         {
@@ -83,6 +84,32 @@ public:
         }
         handler->PSendSysMessage("Got entry {}: {}", entry, sObjectMgr->GetItemTemplate(entry)->Name1);
         return true;
+    }
+
+    // .forge with <base entry> <affix id> [item level]: roll a generated item that has the affix (at grade 1), even one
+    // that never drops (weight 0), plus the rest of the base quality's affix count.
+    static bool HandleAffixWithCommand(ChatHandler* handler, uint32 baseEntry, uint32 affixId, Optional<uint8> itemLevel)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        ItemTemplate const* base = sObjectMgr->GetItemTemplate(baseEntry);
+        if (!base || !ForgeMgr::GetItemMask(base))
+        {
+            handler->SendErrorMessage("Item {} is not a weapon or armor piece that can roll affixes.", baseEntry);
+            return false;
+        }
+        if (!sForgeMgr->GetAffix(affixId))
+        {
+            handler->SendErrorMessage("No affix {}.", affixId);
+            return false;
+        }
+
+        uint32 entry = sForgeMgr->GenerateWithAffix(base, itemLevel.value_or(player->GetLevel()), affixId);
+        if (!entry)
+        {
+            handler->SendErrorMessage("Affix {} doesn't fit item {} at that item level, or no matching Item.dbc pool.", affixId, baseEntry);
+            return false;
+        }
+        return GiveItem(handler, player, entry);
     }
 
     // .forge legendary <base entry> [item level]: roll a Legendary (orange, 4-6 affixes, epic budget x

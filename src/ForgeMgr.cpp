@@ -8,6 +8,7 @@
 #include "Bag.h"
 #include "Config.h"
 #include "Creature.h"
+#include "DBCStores.h"
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "Log.h"
@@ -18,12 +19,14 @@
 #include "Random.h"
 #include "SpellMgr.h"
 #include "StringConvert.h"
+#include "StringFormat.h"
 #include "Timer.h"
 #include "Tokenize.h"
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <mutex>
 #include <set>
@@ -81,6 +84,22 @@ namespace
             return true;
         uint32 type = proto->InventoryType == INVTYPE_ROBE ? INVTYPE_CHEST : proto->InventoryType;
         return type < 32 && (uint32(affix.EffectArg) & (1u << type));
+    }
+
+    // "+1 to Improved Fireball (Mage)": a talent affix's line, until the client patch has a Spell.dbc line for it.
+    std::string TalentBonusText(uint32 talentId, int32 ranks)
+    {
+        TalentEntry const* talent = sTalentStore.LookupEntry(talentId);
+        SpellInfo const* spell = talent ? sSpellMgr->GetSpellInfo(talent->RankID[0]) : nullptr;
+        TalentTabEntry const* tab = talent ? sTalentTabStore.LookupEntry(talent->TalentTab) : nullptr;
+        ChrClassesEntry const* cls = tab && tab->ClassMask ? sChrClassesStore.LookupEntry(std::countr_zero(tab->ClassMask) + 1) : nullptr;
+        return Acore::StringFormat("+{} to {}{}", ranks, spell ? spell->SpellName[0] : "?",
+            cls ? Acore::StringFormat(" ({})", cls->name[0]) : "");
+    }
+
+    void AddDescriptionLine(ItemTemplate& t, std::string const& line)
+    {
+        t.Description = t.Description.empty() ? line : t.Description + "\n" + line;
     }
 
     // Puts spellId in the template's first free spell slot.
@@ -285,6 +304,7 @@ void ForgeMgr::LoadConfig()
     _epicChance = sConfigMgr->GetOption<float>("Forge.EpicChance", 0.0f);
     _epicMinLevel = sConfigMgr->GetOption<uint32>("Forge.EpicMinLevel", 21);
     _uniquesEnabled = sConfigMgr->GetOption<bool>("Forge.Uniques.Enable", true);
+    _talentAffixes = sConfigMgr->GetOption<bool>("Forge.TalentAffixes.Enable", false);
     _legendaryBudget = sConfigMgr->GetOption<float>("Forge.LegendaryBudget", 1.3f);
     _budgetPerLevel = sConfigMgr->GetOption<float>("Forge.BudgetPerLevel", 0.45f);
     _budgetOffset = sConfigMgr->GetOption<float>("Forge.BudgetOffset", -3.0f);
@@ -515,6 +535,17 @@ void ForgeMgr::LoadAffixes()
         {
             LOG_ERROR("sql.sql", "Table `item_affix`: affix {} has invalid stat type {}, skipped.", affix.Id, affix.EffectArg);
             continue;
+        }
+        if (affix.Effect == ITEM_AFFIX_EFFECT_TALENT)
+        {
+            if (!sTalentStore.LookupEntry(affix.EffectArg))
+            {
+                LOG_ERROR("sql.sql", "Table `item_affix`: affix {} has unknown talent {}, skipped.", affix.Id, affix.EffectArg);
+                continue;
+            }
+            // Loaded either way, so items that rolled one keep their other affixes; it rolls only when enabled.
+            if (!_talentAffixes)
+                affix.Weight = 0;
         }
         _affixes[affix.Id] = std::move(affix);
     } while (result->NextRow());
@@ -1302,6 +1333,10 @@ std::unique_ptr<ItemTemplate> ForgeMgr::BuildTemplate(uint32 entry, ItemTemplate
             case ITEM_AFFIX_EFFECT_BLOCK:            t->Block = base.Block * (100 + roll.Value) / 100; break;
             case ITEM_AFFIX_EFFECT_EQUIP_SPELL:
             case ITEM_AFFIX_EFFECT_HIT_SPELL:        AddItemSpell(*t, affix->Effect, affix->EffectArg, tier->MinValue); break;
+            case ITEM_AFFIX_EFFECT_TALENT:
+                if (_talentAffixes)
+                    AddDescriptionLine(*t, TalentBonusText(uint32(affix->EffectArg), roll.Value));
+                break;
             default: break;
         }
     }
@@ -1403,6 +1438,51 @@ uint32 ForgeMgr::Generate(ItemTemplate const* base, uint8 itemLevel, bool force,
     return CreateGenerated(base, itemLevel, quality, std::move(rolls));
 }
 
+uint32 ForgeMgr::GenerateWithAffix(ItemTemplate const* base, uint8 itemLevel, uint32 affixId)
+{
+    if (!base || !GetItemMask(base) || !GetAffix(affixId))
+        return 0;
+    uint8 quality = _budgetMode ? uint8(std::min<uint32>(base->Quality, ITEM_QUALITY_LEGENDARY)) : ITEM_AFFIX_QUALITY_UNSET;
+    uint8 q = std::min<uint8>(_budgetMode ? quality : ITEM_QUALITY_UNCOMMON, ITEM_QUALITY_LEGENDARY);
+    uint32 count = std::max<uint32>(1, urand(_countMin[q], _countMax[q]));
+    std::vector<ItemAffixRoll> rolls = RollCount(base, itemLevel, count, affixId);
+    if (rolls.empty() || rolls.front().AffixId != affixId)
+        return 0;
+    return CreateGenerated(base, itemLevel, quality, std::move(rolls));
+}
+
+void ForgeMgr::UpdateTalentBonuses(Player* player, uint8 slot, Item* item) const
+{
+    if (!player->IsInWorld())
+        return;
+
+    std::unordered_map<uint32, uint8> bonuses;
+    if (_talentAffixes)
+        for (uint8 s = EQUIPMENT_SLOT_START; s < EQUIPMENT_SLOT_END; ++s)
+        {
+            Item* equipped = s == slot ? item : player->GetItemByPos(INVENTORY_SLOT_BAG_0, s);
+            GeneratedItem const* generated = equipped ? GetGenerated(equipped->GetEntry()) : nullptr;
+            if (!generated || !generated->UniqueKey.empty())
+                continue;
+            for (ItemAffixRoll const& roll : generated->Rolls)
+                if (ItemAffix const* affix = GetAffix(roll.AffixId); affix && affix->Effect == ITEM_AFFIX_EFFECT_TALENT && roll.Value > 0)
+                {
+                    uint8& bonus = bonuses[uint32(affix->EffectArg)];
+                    bonus = uint8(std::min<int32>(bonus + roll.Value, 255));
+                }
+        }
+
+    std::vector<uint32> gone;
+    for (auto const& [talentId, bonus] : player->GetTalentRankBonuses())
+        if (!bonuses.count(talentId))
+            gone.push_back(talentId);
+    for (uint32 talentId : gone)
+        player->SetTalentRankBonus(talentId, 0);
+    for (auto const& [talentId, bonus] : bonuses)
+        if (player->GetTalentRankBonus(talentId) != bonus)
+            player->SetTalentRankBonus(talentId, bonus);
+}
+
 uint32 ForgeMgr::CreateGenerated(ItemTemplate const* base, uint8 itemLevel, uint8 quality, std::vector<ItemAffixRoll> rolls,
     std::string const& uniqueKey, uint8 flags)
 {
@@ -1472,7 +1552,10 @@ bool ForgeMgr::RerollItem(Player* player, Item* item)
         player->_ApplyItemMods(item, item->GetSlot(), false);
     bool rerolled = Reroll(item->GetEntry());
     if (equipped)
+    {
         player->_ApplyItemMods(item, item->GetSlot(), true);
+        UpdateTalentBonuses(player);
+    }
     if (rerolled)
         SendTemplate(player, item->GetEntry());
     return rerolled;
