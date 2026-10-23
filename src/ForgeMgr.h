@@ -97,6 +97,7 @@ struct ItemAffix
     int32 EffectArg;
     uint32 ItemMask;
     uint32 Weight;
+    uint32 ClassMask = 0; // talent affixes: the talent's class
     std::vector<ItemAffixTier> Tiers; // ascending MinItemLevel
 
     ItemAffixTier const* GetTier(uint8 tier) const;
@@ -252,6 +253,21 @@ public:
     void SendTalentBonuses(Player* player) const;
     bool TalentAffixesEnabled() const { return _talentAffixes; }
 
+    // Talent affixes roll only for the class of the player an item is rolled for (looter, orb user, GM): set it for the
+    // current thread while rolling. Without one (no player), no talent affix rolls.
+    class RollFor
+    {
+    public:
+        explicit RollFor(Player const* player);
+        ~RollFor() { _classMask = _previous; }
+        RollFor(RollFor const&) = delete;
+        RollFor& operator=(RollFor const&) = delete;
+        static uint32 ClassMask() { return _classMask; }
+    private:
+        uint32 _previous;
+        static thread_local uint32 _classMask;
+    };
+
     // Orb of Upheaval (docs/forge-currency.md): reroll every affix of a generated item under the same entry, keeping
     // its base, item level and quality (the count rerolls within the quality's range). The old template is retired.
     // False if entry isn't a generated item (Uniques and previews aren't). World thread.
@@ -366,6 +382,11 @@ private:
     uint32 _epicMinLevel = 21;
     bool _uniquesEnabled = true;   // Uniques drop from their creatures and from Gambler's Coins
     bool _talentAffixes = false;   // talent affixes roll and work (Forge.TalentAffixes.Enable)
+    uint32 _talentAffixWeight = 30; // all of a class's talent affixes together, against the other affixes' weights
+    // An affix that may roll for the current RollFor player (talent affixes: enabled and the right class).
+    bool CanRoll(ItemAffix const& affix) const;
+    // Pick from candidates by weight; talent affixes share _talentAffixWeight, evenly.
+    ItemAffix const* PickAffix(std::vector<ItemAffix const*> const& candidates) const;
     uint32 _recycleIntervalMs = 30 * 60 * 1000;
     uint32 _recycleGraceMinutes = 120; // longer than PlayerSaveInterval, so items held in memory are saved first
     uint32 _recycleTimer = 0;

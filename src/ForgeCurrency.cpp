@@ -139,6 +139,8 @@ std::vector<ItemAffix const*> ForgeMgr::AffixCandidates(std::vector<ItemAffixRol
     {
         if (onlyAffix && id != onlyAffix)
             continue;
+        if (!onlyAffix && !CanRoll(affix))
+            continue;
         if (kindCount[affix.Kind] >= 3 || !(affix.ItemMask & mask) || (!onlyAffix && !affix.Weight) ||
             usedGroups.count(affix.Group) || affix.Tiers.front().MinItemLevel > itemLevel)
             continue;
@@ -160,23 +162,7 @@ bool ForgeMgr::AddRoll(std::vector<ItemAffixRoll>& rolls, ItemTemplate const* ba
     if (candidates.empty())
         return false;
 
-    ItemAffix const* affix = candidates.front();
-    if (!onlyAffix)
-    {
-        uint32 total = 0;
-        for (ItemAffix const* c : candidates)
-            total += c->Weight;
-        uint32 pick = urand(1, total);
-        for (ItemAffix const* c : candidates)
-        {
-            if (pick <= c->Weight)
-            {
-                affix = c;
-                break;
-            }
-            pick -= c->Weight;
-        }
-    }
+    ItemAffix const* affix = onlyAffix ? candidates.front() : PickAffix(candidates);
 
     // Same naming rule as Roll in grade mode: grade 1 = the highest tier the item level unlocks.
     std::vector<ItemAffixTier const*> unlocked;
@@ -375,6 +361,7 @@ namespace
 
 void ForgeMgr::UseOrb(ForgeOrb const& orb, Player* player, Item* item)
 {
+    RollFor rollFor(player);
     uint32 entry = item->GetEntry();
     std::string before = item->GetTemplate()->Name1;
     ChatHandler chat(player->GetSession());

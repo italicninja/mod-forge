@@ -22,6 +22,7 @@ Every eligible drop is forged into a one-of-a-kind item, with its own name, stat
 | **Spell affixes** | One "Equip:" effect or "Chance on hit:" proc per item, taken from existing Spell.dbc spells, so the client draws the line itself. |
 | **Legendaries** | A small share of purple drops turn orange, with 4–6 affixes. |
 | **Uniques** | Hand-authored items in light gold, one per dungeon-final, raid and world boss, with fixed stats, "Equip:", "Chance on hit:" and "Use:" spells, and flavour text. |
+| **Talent affixes** | "+1 to Improved Fireball": a talent past its last rank (6/5), or granted with no points spent. One per player talent (829), rare, rolled only for the looter's class. Optional; needs the core's talent rank bonuses. See [Talent affixes](#talent-affixes). |
 | **Crafting orbs** | 19 droppable orbs, PoE's currency: reroll an item, add or remove affixes, reroll the values, forge a plain item, or corrupt it. See [Crafting orbs](#crafting-orbs). |
 
 <div align="center">
@@ -112,6 +113,40 @@ The item names in the chat lines are examples; every roll differs. `.forge info 
 grades, and whether it is Corrupted or a Unique copy.
 
 
+## Talent affixes
+
+`Forge.TalentAffixes.Enable = 1` (off by default). A suffix "of <talent>" gives +1 rank to that talent, one per item.
+Two items for the same talent stack.
+
+- **Past the last rank:** the talent works at the points spent + the bonus. Each rank past the last adds the step
+  between its last two ranks: Improved Fireball 5/5 + 1 takes 0.6 sec off Fireball. Proc chances scale the same
+  way, and past 100% it simply always procs.
+- **No points spent:** the talent is granted at the bonus, whatever the tree's requirements: a passive applies, a
+  spell (Pyroblast) goes into the spell book. Nothing is saved; take the item off and it's gone. Spend a point and
+  it becomes the learned talent.
+- **Drops:** all 829 talent affixes (`sql/world/2026_10_22_02_item_affix_talents.sql`, from
+  `tools/item-affixes/talents.py`) roll only for the class of whoever the item is rolled for: the looter, the orb
+  user, a quest reward's player, the GM. Together a class's talent affixes weigh `Forge.TalentAffixes.Weight` (30,
+  about 2% of suffix rolls) and take the item's name. Each unlocks at the item level its tree row opens (10 + 5 per
+  row).
+- **Core:** the commit "Talent rank bonuses" in our fork (`Player::SetTalentRankBonus`, `PlayerTalentBonus.cpp`).
+  Without it this module doesn't build; the feature itself stays off until enabled.
+- **Tooltip:** the item's description line reads "+1 to Improved Fireball (Mage)".
+
+### ForgeTalents addon (client)
+
+The client draws the talent window from its own data, so on its own it still shows 5/5. The optional addon in
+[`addon/ForgeTalents`](addon/ForgeTalents) shows the rank with the bonus in green on the talent icon, and adds
+"+1 from gear: works at rank 6/5" to the talent's tooltip. Spending points is untouched.
+
+<img src="docs/images/talent-addon.png" alt="Improved Fireball at 5/5 with a green 6 on its icon and the tooltip line +1 from gear: works at rank 6/5" width="480">
+
+- **Install (players):** copy `addon/ForgeTalents` into the game's `Interface/AddOns/`. `addon/pack.sh <dir>` writes
+  `ForgeTalents.zip` for a download page.
+- **Protocol:** the server sends an addon whisper to the player, prefix `FORGE_TB`, body `26=1,30=2` (Talent.dbc id
+  = bonus ranks; empty = none), at login and whenever the bonuses change. The addon asks with `?` when it loads (a
+  `/reload`); the server answers and drops the whisper.
+
 ## How it works
 
 ```mermaid
@@ -167,6 +202,8 @@ flowchart LR
 | `Forge.Currency.DropChance` | `2` | % per creature kill (not critters) |
 | `Forge.Currency.EliteMultiplier` / `BossMultiplier` | `3` / `10` | DropChance multiplier for elites and rares, and for dungeon and world bosses |
 | `Forge.Currency.DisenchantChance` | `50` | % per disenchanted forged item or Unique |
+| `Forge.TalentAffixes.Enable` | `0` | Talent affixes roll and work (our realm: `1`) |
+| `Forge.TalentAffixes.Weight` | `30` | All of a class's talent affixes together, against the other suffixes' weights |
 
 Log channel: `module.forge`.
 
@@ -181,6 +218,7 @@ Log channel: `module.forge`.
 | `.forge unique [key]` | List the Uniques, or give yourself one |
 | `.forge info <entry>` | Show what a generated item rolled |
 | `.forge reroll <entry>` | What an Orb of Upheaval does, on an item you carry or wear, without the orb or its quality rule |
+| `.forge with <base> <affix> [ilvl]` | Roll an item with that affix (grade 1), even one that never drops; talent affixes are 10000 + Talent.dbc id |
 
 ## For other modules
 

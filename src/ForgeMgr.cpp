@@ -306,6 +306,7 @@ void ForgeMgr::LoadConfig()
     _epicMinLevel = sConfigMgr->GetOption<uint32>("Forge.EpicMinLevel", 21);
     _uniquesEnabled = sConfigMgr->GetOption<bool>("Forge.Uniques.Enable", true);
     _talentAffixes = sConfigMgr->GetOption<bool>("Forge.TalentAffixes.Enable", false);
+    _talentAffixWeight = sConfigMgr->GetOption<uint32>("Forge.TalentAffixes.Weight", 30);
     _legendaryBudget = sConfigMgr->GetOption<float>("Forge.LegendaryBudget", 1.3f);
     _budgetPerLevel = sConfigMgr->GetOption<float>("Forge.BudgetPerLevel", 0.45f);
     _budgetOffset = sConfigMgr->GetOption<float>("Forge.BudgetOffset", -3.0f);
@@ -539,11 +540,14 @@ void ForgeMgr::LoadAffixes()
         }
         if (affix.Effect == ITEM_AFFIX_EFFECT_TALENT)
         {
-            if (!sTalentStore.LookupEntry(affix.EffectArg))
+            TalentEntry const* talent = sTalentStore.LookupEntry(affix.EffectArg);
+            TalentTabEntry const* tab = talent ? sTalentTabStore.LookupEntry(talent->TalentTab) : nullptr;
+            if (!tab || !tab->ClassMask)
             {
                 LOG_ERROR("sql.sql", "Table `item_affix`: affix {} has unknown talent {}, skipped.", affix.Id, affix.EffectArg);
                 continue;
             }
+            affix.ClassMask = tab->ClassMask;
             // Loaded either way, so items that rolled one keep their other affixes; it rolls only when enabled.
             if (!_talentAffixes)
                 affix.Weight = 0;
@@ -1174,7 +1178,7 @@ std::vector<ItemAffixRoll> ForgeMgr::Roll(ItemTemplate const* base, uint8 itemLe
             {
                 if (affix.Kind != kind || !(affix.ItemMask & mask) || !affix.Weight || usedGroups.count(affix.Group))
                     continue;
-                if (!FitsSlot(affix, base))
+                if (!FitsSlot(affix, base) || !CanRoll(affix))
                     continue;
                 if (affix.Tiers.front().MinItemLevel > itemLevel)
                     continue;
@@ -1184,17 +1188,7 @@ std::vector<ItemAffixRoll> ForgeMgr::Roll(ItemTemplate const* base, uint8 itemLe
             if (!totalWeight)
                 break;
 
-            uint32 pick = urand(1, totalWeight);
-            ItemAffix const* affix = candidates.back();
-            for (ItemAffix const* candidate : candidates)
-            {
-                if (pick <= candidate->Weight)
-                {
-                    affix = candidate;
-                    break;
-                }
-                pick -= candidate->Weight;
-            }
+            ItemAffix const* affix = PickAffix(candidates);
 
             if (grades)
             {
@@ -1302,7 +1296,8 @@ std::unique_ptr<ItemTemplate> ForgeMgr::BuildTemplate(uint32 entry, ItemTemplate
         requiredLevel = std::max(requiredLevel, tier->RequiredLevel);
         // The name shows the spell affix (at most one per item), else the highest tier, so a player can tell
         // a proc or equip effect from the name.
-        bool spell = IsSpellEffect(affix->Effect);
+        // A talent affix names the item the same way.
+        bool spell = IsSpellEffect(affix->Effect) || (affix->Effect == ITEM_AFFIX_EFFECT_TALENT && _talentAffixes);
         if (!bestTier[affix->Kind] || spell || (!bestIsSpell[affix->Kind] && tier->Tier > bestTier[affix->Kind]->Tier))
         {
             bestTier[affix->Kind] = tier;
@@ -1437,6 +1432,47 @@ uint32 ForgeMgr::Generate(ItemTemplate const* base, uint8 itemLevel, bool force,
     if (rolls.empty())
         return 0;
     return CreateGenerated(base, itemLevel, quality, std::move(rolls));
+}
+
+thread_local uint32 ForgeMgr::RollFor::_classMask = 0;
+
+ForgeMgr::RollFor::RollFor(Player const* player) : _previous(_classMask)
+{
+    _classMask = player ? player->getClassMask() : 0;
+}
+
+bool ForgeMgr::CanRoll(ItemAffix const& affix) const
+{
+    return affix.Effect != ITEM_AFFIX_EFFECT_TALENT || (_talentAffixes && (affix.ClassMask & RollFor::ClassMask()));
+}
+
+ItemAffix const* ForgeMgr::PickAffix(std::vector<ItemAffix const*> const& candidates) const
+{
+    std::vector<ItemAffix const*> talents;
+    uint32 total = 0;
+    for (ItemAffix const* c : candidates)
+    {
+        if (c->Effect == ITEM_AFFIX_EFFECT_TALENT)
+            talents.push_back(c);
+        else
+            total += c->Weight;
+    }
+    uint32 talentWeight = talents.empty() ? 0 : _talentAffixWeight;
+    if (!total && !talentWeight)
+        return candidates.empty() ? nullptr : candidates.front();
+
+    uint32 pick = urand(1, total + talentWeight);
+    if (pick > total)
+        return talents[urand(0, talents.size() - 1)];
+    for (ItemAffix const* c : candidates)
+    {
+        if (c->Effect == ITEM_AFFIX_EFFECT_TALENT)
+            continue;
+        if (pick <= c->Weight)
+            return c;
+        pick -= c->Weight;
+    }
+    return candidates.back();
 }
 
 uint32 ForgeMgr::GenerateWithAffix(ItemTemplate const* base, uint8 itemLevel, uint32 affixId)
@@ -1658,6 +1694,7 @@ void ForgeMgr::OnLootFilled(Loot& loot, LootStore const& store, Player* lootOwne
 {
     if (!_enabled || !lootOwner || _pools.empty())
         return;
+    RollFor rollFor(lootOwner); // talent affixes for the looter's class
 
     // Disenchanting a forged item (or a Unique) may also give an orb.
     if (&store == &LootTemplates_Disenchant)

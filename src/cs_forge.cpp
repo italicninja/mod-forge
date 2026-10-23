@@ -44,6 +44,7 @@ public:
         Optional<uint8> prefixes, Optional<uint8> suffixes)
     {
         Player* player = handler->GetSession()->GetPlayer();
+        ForgeMgr::RollFor rollFor(player);
         ItemTemplate const* base = sObjectMgr->GetItemTemplate(baseEntry);
         if (!base || !ForgeMgr::GetItemMask(base))
         {
@@ -91,6 +92,7 @@ public:
     static bool HandleAffixWithCommand(ChatHandler* handler, uint32 baseEntry, uint32 affixId, Optional<uint8> itemLevel)
     {
         Player* player = handler->GetSession()->GetPlayer();
+        ForgeMgr::RollFor rollFor(player);
         ItemTemplate const* base = sObjectMgr->GetItemTemplate(baseEntry);
         if (!base || !ForgeMgr::GetItemMask(base))
         {
@@ -117,6 +119,7 @@ public:
     static bool HandleAffixLegendaryCommand(ChatHandler* handler, uint32 baseEntry, Optional<uint8> itemLevel)
     {
         Player* player = handler->GetSession()->GetPlayer();
+        ForgeMgr::RollFor rollFor(player);
         ItemTemplate const* base = sObjectMgr->GetItemTemplate(baseEntry);
         if (!base || !ForgeMgr::GetItemMask(base))
         {
@@ -158,6 +161,7 @@ public:
     static bool HandleAffixRerollCommand(ChatHandler* handler, uint32 entry)
     {
         Player* player = handler->GetSession()->GetPlayer();
+        ForgeMgr::RollFor rollFor(player);
         Item* item = player->GetItemByEntry(entry);
         if (!item)
         {
