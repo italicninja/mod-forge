@@ -13,6 +13,7 @@ void AddSC_forge_commandscript();
 void AddSC_forge_currency();
 
 // The version this source is tagged with in https://github.com/italicninja/mod-forge (bump it with each tag).
+// addon/pack.sh stamps it into the ForgeTalents addon's .toc too.
 constexpr char const* FORGE_VERSION = "v0.1.0";
 
 namespace
