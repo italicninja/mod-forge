@@ -7,7 +7,7 @@
 # Forge: PoE-style generated loot. Eligible drops become new items with prefixes and suffixes, plus
 # Legendaries, Uniques and spell affixes. Design: docs/loot-affixes.md in the wowproject repo.
 # GM commands: .forge (or .affix). Log: logger "module.forge" (under Logger.module).
-# Generated entries need the client's patch-enUS-4.MPQ (wowproject tools/client-patch).
+# Generated entries need the client's patch-enUS-4.MPQ (tools/client-patch/build-patch.py; see the README).
 
 ###################################################################################################
 # GENERATED LOOT (wowproject docs/loot-affixes.md)

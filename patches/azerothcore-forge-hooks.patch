@@ -1,0 +1,519 @@
+From ab5d76e3ec4d8d83a74bcd2aa13224ab739a54fc Mon Sep 17 00:00:00 2001
+From: Italicninja <dev@italicninja.com>
+Date: Mon, 2 Nov 2026 07:46:38 -0700
+Subject: [PATCH] mod-forge core hooks: runtime item templates, an
+ item-template load hook, talent rank bonuses
+
+What mod-forge (https://github.com/italicninja/mod-forge) needs from the core. Nothing here knows about any one module.
+
+- ObjectMgr::SetGeneratedItemTemplateLookup: GetItemTemplate falls through to it for entries item_template
+  doesn't have. IsGeneratedItem: the entry is the lookup's, not item_template's.
+- WorldScript::OnAfterItemTemplatesLoad, right after item templates and item set names, before auctions,
+  guilds, mail and logins (they delete items whose template is missing).
+- Null checks on the template where a generated entry can be gone once nothing holds it: Player::_SaveInventory
+  and the loot packet.
+- Player::SetTalentRankBonus(talentId, bonus): +ranks to a talent from outside the talent tree. The talent works
+  at spent + bonus ranks (its auras' amounts and proc chance); a talent with no points spent is granted at the
+  bonus. The talent tree the client shows never changes.
+---
+ src/server/game/Entities/Player/Player.cpp    |  10 +
+ src/server/game/Entities/Player/Player.h      |  17 ++
+ .../game/Entities/Player/PlayerStorage.cpp    |   5 +-
+ .../Entities/Player/PlayerTalentBonus.cpp     | 217 ++++++++++++++++++
+ src/server/game/Globals/ObjectMgr.cpp         |  11 +-
+ src/server/game/Globals/ObjectMgr.h           |   6 +
+ src/server/game/Loot/LootMgr.cpp              |   4 +-
+ .../Scripting/ScriptDefines/WorldScript.cpp   |   5 +
+ .../Scripting/ScriptDefines/WorldScript.h     |   8 +
+ src/server/game/Scripting/ScriptMgr.h         |   1 +
+ .../game/Spells/Auras/SpellAuraEffects.cpp    |   4 +
+ src/server/game/Spells/Auras/SpellAuras.cpp   |   3 +
+ src/server/game/World/World.cpp               |   4 +
+ 13 files changed, 291 insertions(+), 4 deletions(-)
+ create mode 100644 src/server/game/Entities/Player/PlayerTalentBonus.cpp
+
+diff --git a/src/server/game/Entities/Player/Player.cpp b/src/server/game/Entities/Player/Player.cpp
+index 138e7eab4..2860b4e55 100644
+--- a/src/server/game/Entities/Player/Player.cpp
++++ b/src/server/game/Entities/Player/Player.cpp
+@@ -3960,6 +3960,9 @@ bool Player::resetTalents(bool noResetCost)
+ 
+     AutoUnequipOffhandIfNeed();
+ 
++    // wowproject: talents with a rank bonus and no points spent any more are granted
++    UpdateTalentRankBonuses();
++
+     // pussywizard: removed saving to db, nothing important happens and saving only spells and talents may cause data integrity problems (eg. with skills saved to db)
+     SetFreeTalentPoints(talentPointsForLevel);
+ 
+@@ -14417,6 +14420,8 @@ void Player::LearnTalent(uint32 talentId, uint32 talentRank, bool command /*= fa
+             if (sSpellMgr->IsAdditionalTalentSpell(spellInfo->Effects[i].TriggerSpell))
+                 learnSpell(spellInfo->Effects[i].TriggerSpell);
+ 
++    // wowproject: a talent granted by its rank bonus (no points spent) becomes a learned one
++    SetTalentBonusGrant(talentId, 0);
+     addTalent(spellId, GetActiveSpecMask(), currentTalentRank);
+ 
+     if (!command)
+@@ -15543,6 +15548,10 @@ void Player::ActivateSpec(uint8 spec)
+ 
+     std::unordered_set<uint32> removedSpecAuras;
+ 
++    // wowproject: drop talents granted by rank bonuses in the old spec; the new spec's are granted below
++    for (auto const& [talentId, spellId] : std::unordered_map<uint32, uint32>(m_talentBonusGrant))
++        SetTalentBonusGrant(talentId, 0);
++
+     // xinef: reset talent auras
+     for (PlayerTalentMap::iterator itr = m_talents.begin(); itr != m_talents.end(); ++itr)
+     {
+@@ -15660,6 +15669,7 @@ void Player::ActivateSpec(uint8 spec)
+ 
+     m_usedTalentCount = spentTalents;
+     InitTalentForLevel();
++    UpdateTalentRankBonuses(); // wowproject: talent rank bonuses in the new spec
+ 
+     // load them asynchronously
+     {
+diff --git a/src/server/game/Entities/Player/Player.h b/src/server/game/Entities/Player/Player.h
+index 5a29ac7b4..15116cd7e 100644
+--- a/src/server/game/Entities/Player/Player.h
++++ b/src/server/game/Entities/Player/Player.h
+@@ -1757,6 +1757,18 @@ public:
+     void _addTalentAurasAndSpells(uint32 spellId);
+     [[nodiscard]] bool HasTalent(uint32 spell_id, uint8 spec) const;
+ 
++    // Talent rank bonuses (wowproject, PlayerTalentBonus.cpp): +ranks to a talent from outside the talent tree (gear
++    // affixes, mod-forge). The talent works at spent + bonus ranks: past its last rank each rank adds the step between
++    // the last two (to its amounts and proc chance), and a talent with no points spent is granted at the bonus.
++    // A module sets the bonuses; outside the world they are stored and applied by UpdateTalentRankBonuses at login.
++    void SetTalentRankBonus(uint32 talentId, uint8 bonus);
++    [[nodiscard]] uint8 GetTalentRankBonus(uint32 talentId) const;
++    [[nodiscard]] std::unordered_map<uint32, uint8> const& GetTalentRankBonuses() const { return m_talentRankBonus; }
++    void UpdateTalentRankBonuses();
++    // amount of effIndex on spellInfo (a passive talent rank of this player's) with the talent's bonus ranks
++    [[nodiscard]] int32 GetTalentBonusAmount(SpellInfo const* spellInfo, uint8 effIndex, int32 amount) const;
++    [[nodiscard]] float GetTalentBonusProcChance(SpellInfo const* spellInfo, float chance) const;
++
+     [[nodiscard]] uint32 CalculateTalentsPoints() const;
+     void SetBonusTalentCount(uint32 count) { m_extraBonusTalentCount = count; };
+     uint32 GetBonusTalentCount() { return m_extraBonusTalentCount; };
+@@ -2873,6 +2885,11 @@ protected:
+     PlayerMails m_mail;
+     PlayerSpellMap m_spells;
+     PlayerTalentMap m_talents;
++    std::unordered_map<uint32, uint8> m_talentRankBonus;   // talent id -> bonus ranks
++    std::unordered_map<uint32, uint32> m_talentBonusGrant; // talent id -> rank spell granted by its bonus (no points spent)
++    void UpdateTalentRankBonus(uint32 talentId);
++    void SetTalentBonusGrant(uint32 talentId, uint32 spellId); // 0: none
++    [[nodiscard]] uint8 GetSpentTalentRank(TalentEntry const* talentInfo) const;
+     uint32 m_lastPotionId;                              // last used health/mana potion in combat, that block next potion use
+ 
+     GlobalCooldownMgr m_GlobalCooldownMgr;
+diff --git a/src/server/game/Entities/Player/PlayerStorage.cpp b/src/server/game/Entities/Player/PlayerStorage.cpp
+index c3117845d..40c279cb4 100644
+--- a/src/server/game/Entities/Player/PlayerStorage.cpp
++++ b/src/server/game/Entities/Player/PlayerStorage.cpp
+@@ -7452,7 +7452,8 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
+         if (item->GetState() == ITEM_NEW)
+         {
+             // Xinef: item is removed, remove loot from storage if any
+-            if (item->GetTemplate()->HasFlag(ITEM_FLAG_HAS_LOOT))
++            // A generated (affix) entry can be gone once the item has no item_instance row.
++            if (ItemTemplate const* proto = item->GetTemplate(); proto && proto->HasFlag(ITEM_FLAG_HAS_LOOT))
+                 sLootItemStorage->RemoveStoredLoot(item->GetGUID());
+             continue;
+         }
+@@ -7467,7 +7468,7 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
+         m_items[i]->FSetState(ITEM_NEW);
+ 
+         // Xinef: item is removed, remove loot from storage if any
+-        if (item->GetTemplate()->HasFlag(ITEM_FLAG_HAS_LOOT))
++        if (ItemTemplate const* proto = item->GetTemplate(); proto && proto->HasFlag(ITEM_FLAG_HAS_LOOT))
+             sLootItemStorage->RemoveStoredLoot(item->GetGUID());
+     }
+ 
+diff --git a/src/server/game/Entities/Player/PlayerTalentBonus.cpp b/src/server/game/Entities/Player/PlayerTalentBonus.cpp
+new file mode 100644
+index 000000000..1717bcbe9
+--- /dev/null
++++ b/src/server/game/Entities/Player/PlayerTalentBonus.cpp
+@@ -0,0 +1,217 @@
++/*
++ * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program. If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// Talent rank bonuses (wowproject): +ranks to a talent from outside the talent tree, e.g. a gear affix (mod-forge).
++// The talent tree itself never changes: the client still shows the points spent, the server makes the talent work
++// at spent + bonus ranks.
++
++#include "Player.h"
++#include "SpellAuraEffects.h"
++#include "SpellMgr.h"
++#include <cmath>
++
++namespace
++{
++    uint8 GetTalentMaxRank(TalentEntry const* talentInfo)
++    {
++        uint8 maxRank = 0;
++        for (uint8 rank = 0; rank < MAX_TALENT_RANK; ++rank)
++            if (talentInfo->RankID[rank])
++                maxRank = rank + 1;
++        return maxRank;
++    }
++
++    // value(rank) at any rank: past the last rank, each rank adds the step between the last two (the first rank's
++    // value for a one-rank talent).
++    template <typename ValueFn>
++    float TalentRankValue(TalentEntry const* talentInfo, uint32 rank, ValueFn value)
++    {
++        uint8 maxRank = GetTalentMaxRank(talentInfo);
++        if (!maxRank || !rank)
++            return 0.0f;
++        auto at = [&](uint8 r) -> float
++        {
++            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(talentInfo->RankID[r - 1]);
++            return spellInfo ? value(spellInfo) : 0.0f;
++        };
++        if (rank <= maxRank)
++            return at(rank);
++        float top = at(maxRank);
++        float step = maxRank > 1 ? top - at(maxRank - 1) : top;
++        return top + float(rank - maxRank) * step;
++    }
++}
++
++void Player::SetTalentRankBonus(uint32 talentId, uint8 bonus)
++{
++    if (bonus)
++        m_talentRankBonus[talentId] = bonus;
++    else if (!m_talentRankBonus.erase(talentId) && !m_talentBonusGrant.count(talentId))
++        return;
++
++    if (IsInWorld())
++        UpdateTalentRankBonus(talentId);
++}
++
++uint8 Player::GetTalentRankBonus(uint32 talentId) const
++{
++    auto itr = m_talentRankBonus.find(talentId);
++    return itr != m_talentRankBonus.end() ? itr->second : 0;
++}
++
++void Player::UpdateTalentRankBonuses()
++{
++    std::vector<uint32> talents;
++    for (auto const& [talentId, bonus] : m_talentRankBonus)
++        talents.push_back(talentId);
++    for (auto const& [talentId, spellId] : m_talentBonusGrant)
++        if (!m_talentRankBonus.count(talentId))
++            talents.push_back(talentId);
++    for (uint32 talentId : talents)
++        UpdateTalentRankBonus(talentId);
++}
++
++uint8 Player::GetSpentTalentRank(TalentEntry const* talentInfo) const
++{
++    for (uint8 rank = 0; rank < MAX_TALENT_RANK; ++rank)
++        if (talentInfo->RankID[rank] && HasTalent(talentInfo->RankID[rank], GetActiveSpec()))
++            return rank + 1;
++    return 0;
++}
++
++void Player::UpdateTalentRankBonus(uint32 talentId)
++{
++    TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentId);
++    if (!talentInfo)
++        return;
++
++    // Only the player's own class: another class's talent does nothing.
++    TalentTabEntry const* talentTab = sTalentTabStore.LookupEntry(talentInfo->TalentTab);
++    uint8 bonus = talentTab && (getClassMask() & talentTab->ClassMask) ? GetTalentRankBonus(talentId) : 0;
++    uint8 spent = GetSpentTalentRank(talentInfo);
++    uint8 maxRank = GetTalentMaxRank(talentInfo);
++
++    // No points spent: the bonus grants the talent at its rank (the last rank, and more past it).
++    uint32 grant = 0;
++    if (!spent && bonus && maxRank)
++        grant = talentInfo->RankID[std::min(bonus, maxRank) - 1];
++    SetTalentBonusGrant(talentId, grant);
++
++    // The talent's aura (spent or granted) recalculates its amounts with the bonus.
++    uint32 spellId = spent ? talentInfo->RankID[spent - 1] : grant;
++    if (Aura* aura = spellId ? GetOwnedAura(spellId, GetGUID()) : nullptr)
++        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
++            if (AuraEffect* aurEff = aura->GetEffect(i))
++                aurEff->RecalculateAmount(this);
++}
++
++void Player::SetTalentBonusGrant(uint32 talentId, uint32 spellId)
++{
++    auto itr = m_talentBonusGrant.find(talentId);
++    uint32 old = itr != m_talentBonusGrant.end() ? itr->second : 0;
++    if (old == spellId)
++        return;
++
++    TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentId);
++    // Like LearnTalent and resetTalents: an active talent spell (Pyroblast) goes into the spell book, a passive one
++    // or one with learn effects applies its auras and spells. Spells from a grant are temporary, never saved.
++    auto inSpellBook = [talentInfo](SpellInfo const* spellInfo)
++    {
++        return talentInfo->addToSpellBook && !spellInfo->HasAttribute(SPELL_ATTR0_PASSIVE) &&
++            !spellInfo->HasEffect(SPELL_EFFECT_LEARN_SPELL);
++    };
++
++    if (SpellInfo const* spellInfo = old ? sSpellMgr->GetSpellInfo(old) : nullptr)
++    {
++        _removeTalentAurasAndSpells(old);
++        if (inSpellBook(spellInfo))
++        {
++            // Also the higher ranks learned on top of it: they stay known for no spec, like after a talent reset,
++            // and come back with the next grant or the talent.
++            removeSpell(old, GetActiveSpecMask(), false);
++            // A talent spell is kept in m_spells for no spec; a temporary one would block learning it again.
++            auto spell = m_spells.find(old);
++            if (spell != m_spells.end() && spell->second->State == PLAYERSPELL_TEMPORARY && !spell->second->specMask)
++            {
++                delete spell->second;
++                m_spells.erase(spell);
++            }
++        }
++        else
++            SendLearnPacket(old, false);
++    }
++    if (old)
++        m_talentBonusGrant.erase(talentId);
++
++    if (SpellInfo const* spellInfo = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr)
++    {
++        m_talentBonusGrant[talentId] = spellId;
++        if (inSpellBook(spellInfo))
++            learnSpell(spellId, true); // restores the higher ranks known for no spec
++        else
++        {
++            SendLearnPacket(spellId, true);
++            _addTalentAurasAndSpells(spellId);
++        }
++    }
++}
++
++int32 Player::GetTalentBonusAmount(SpellInfo const* spellInfo, uint8 effIndex, int32 amount) const
++{
++    if (m_talentRankBonus.empty() || !spellInfo->IsPassive())
++        return amount;
++    TalentSpellPos const* talentPos = GetTalentSpellPos(spellInfo->Id);
++    uint8 bonus = talentPos ? GetTalentRankBonus(talentPos->talent_id) : 0;
++    TalentEntry const* talentInfo = bonus ? sTalentStore.LookupEntry(talentPos->talent_id) : nullptr;
++    if (!talentInfo)
++        return amount;
++
++    uint32 rank = talentPos->rank + 1;
++    uint8 spent = GetSpentTalentRank(talentInfo);
++    uint32 effective = spent ? spent + bonus : bonus;
++    if (effective <= rank)
++        return amount;
++
++    auto value = [this, effIndex](SpellInfo const* rankInfo) { return float(rankInfo->Effects[effIndex].CalcValue(this)); };
++    float delta = TalentRankValue(talentInfo, effective, value) - TalentRankValue(talentInfo, rank, value);
++    return amount + int32(std::lround(delta));
++}
++
++float Player::GetTalentBonusProcChance(SpellInfo const* spellInfo, float chance) const
++{
++    if (m_talentRankBonus.empty() || !spellInfo->IsPassive())
++        return chance;
++    TalentSpellPos const* talentPos = GetTalentSpellPos(spellInfo->Id);
++    uint8 bonus = talentPos ? GetTalentRankBonus(talentPos->talent_id) : 0;
++    TalentEntry const* talentInfo = bonus ? sTalentStore.LookupEntry(talentPos->talent_id) : nullptr;
++    if (!talentInfo)
++        return chance;
++
++    uint32 rank = talentPos->rank + 1;
++    uint8 spent = GetSpentTalentRank(talentInfo);
++    uint32 effective = spent ? spent + bonus : bonus;
++    if (effective <= rank)
++        return chance;
++
++    // Each rank's own proc chance (spell_proc, else Spell.dbc). Over 100% simply always procs.
++    auto value = [](SpellInfo const* rankInfo)
++    {
++        SpellProcEntry const* procEntry = sSpellMgr->GetSpellProcEntry(rankInfo->Id);
++        return procEntry && procEntry->Chance ? procEntry->Chance : float(rankInfo->ProcChance);
++    };
++    return chance + TalentRankValue(talentInfo, effective, value) - TalentRankValue(talentInfo, rank, value);
++}
+diff --git a/src/server/game/Globals/ObjectMgr.cpp b/src/server/game/Globals/ObjectMgr.cpp
+index 61afa5091..c681a74c0 100644
+--- a/src/server/game/Globals/ObjectMgr.cpp
++++ b/src/server/game/Globals/ObjectMgr.cpp
+@@ -3933,7 +3933,16 @@ void ObjectMgr::LoadItemTemplates()
+ 
+ ItemTemplate const* ObjectMgr::GetItemTemplate(uint32 entry)
+ {
+-    return entry < _itemTemplateStoreFast.size() ? _itemTemplateStoreFast[entry] : nullptr;
++    if (entry < _itemTemplateStoreFast.size() && _itemTemplateStoreFast[entry])
++        return _itemTemplateStoreFast[entry];
++    return _generatedItemTemplateLookup ? _generatedItemTemplateLookup(entry) : nullptr;
++}
++
++bool ObjectMgr::IsGeneratedItem(uint32 entry) const
++{
++    if (entry < _itemTemplateStoreFast.size() && _itemTemplateStoreFast[entry])
++        return false;
++    return _generatedItemTemplateLookup && _generatedItemTemplateLookup(entry);
+ }
+ 
+ void ObjectMgr::LoadItemSetNameLocales()
+diff --git a/src/server/game/Globals/ObjectMgr.h b/src/server/game/Globals/ObjectMgr.h
+index 271ea7cb0..1c264499a 100644
+--- a/src/server/game/Globals/ObjectMgr.h
++++ b/src/server/game/Globals/ObjectMgr.h
+@@ -783,6 +783,11 @@ public:
+     CreatureAddon const* GetCreatureTemplateAddon(uint32 entry);
+     CreatureMovementData const* GetCreatureMovementOverride(ObjectGuid::LowType spawnId) const;
+     ItemTemplate const* GetItemTemplate(uint32 entry);
++    // Item templates built at runtime (e.g. mod-forge's generated loot) for entries item_template doesn't have.
++    // The lookup must be thread-safe and its pointers valid until shutdown. Set it before items load.
++    using GeneratedItemTemplateLookup = ItemTemplate const* (*)(uint32 entry);
++    void SetGeneratedItemTemplateLookup(GeneratedItemTemplateLookup lookup) { _generatedItemTemplateLookup = lookup; }
++    [[nodiscard]] bool IsGeneratedItem(uint32 entry) const;
+     [[nodiscard]] ItemTemplateContainer const* GetItemTemplateStore() const { return &_itemTemplateStore; }
+     [[nodiscard]] std::vector<ItemTemplate*> const* GetItemTemplateStoreFast() const { return &_itemTemplateStoreFast; }
+ 
+@@ -1683,6 +1688,7 @@ private:
+     BroadcastTextContainer _broadcastTextStore;
+     ItemTemplateContainer _itemTemplateStore;
+     std::vector<ItemTemplate*> _itemTemplateStoreFast; // pussywizard
++    GeneratedItemTemplateLookup _generatedItemTemplateLookup = nullptr;
+     ItemLocaleContainer _itemLocaleStore;
+     ItemSetNameLocaleContainer _itemSetNameLocaleStore;
+     QuestLocaleContainer _questLocaleStore;
+diff --git a/src/server/game/Loot/LootMgr.cpp b/src/server/game/Loot/LootMgr.cpp
+index a103aab09..eb90d7a3e 100644
+--- a/src/server/game/Loot/LootMgr.cpp
++++ b/src/server/game/Loot/LootMgr.cpp
+@@ -964,7 +964,9 @@ ByteBuffer& operator<<(ByteBuffer& b, LootItem const& li)
+ {
+     b << uint32(li.itemid);
+     b << uint32(li.count);                                  // nr of items of this type
+-    b << uint32(sObjectMgr->GetItemTemplate(li.itemid)->DisplayInfoID);
++    // A generated entry (ObjectMgr::SetGeneratedItemTemplateLookup) can be gone once nothing holds it.
++    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(li.itemid);
++    b << uint32(proto ? proto->DisplayInfoID : 0);
+     b << uint32(li.randomSuffix);
+     b << uint32(li.randomPropertyId);
+     //b << uint8(0);                                        // slot type - will send after this function call
+diff --git a/src/server/game/Scripting/ScriptDefines/WorldScript.cpp b/src/server/game/Scripting/ScriptDefines/WorldScript.cpp
+index 94c93ede4..7bee7d832 100644
+--- a/src/server/game/Scripting/ScriptDefines/WorldScript.cpp
++++ b/src/server/game/Scripting/ScriptDefines/WorldScript.cpp
+@@ -84,6 +84,11 @@ void ScriptMgr::OnBeforeWorldInitialized()
+     CALL_ENABLED_HOOKS(WorldScript, WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED, script->OnBeforeWorldInitialized());
+ }
+ 
++void ScriptMgr::OnAfterItemTemplatesLoad()
++{
++    CALL_ENABLED_HOOKS(WorldScript, WORLDHOOK_ON_AFTER_ITEM_TEMPLATES_LOAD, script->OnAfterItemTemplatesLoad());
++}
++
+ WorldScript::WorldScript(char const* name, std::vector<uint16> enabledHooks)
+     : ScriptObject(name, WORLDHOOK_END)
+ {
+diff --git a/src/server/game/Scripting/ScriptDefines/WorldScript.h b/src/server/game/Scripting/ScriptDefines/WorldScript.h
+index f5a51b82f..82c8be72c 100644
+--- a/src/server/game/Scripting/ScriptDefines/WorldScript.h
++++ b/src/server/game/Scripting/ScriptDefines/WorldScript.h
+@@ -37,6 +37,7 @@ enum WorldHook
+     WORLDHOOK_ON_AFTER_UNLOAD_ALL_MAPS,
+     WORLDHOOK_ON_BEFORE_FINALIZE_PLAYER_WORLD_SESSION,
+     WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED,
++    WORLDHOOK_ON_AFTER_ITEM_TEMPLATES_LOAD,
+     WORLDHOOK_END
+ };
+ 
+@@ -92,6 +93,13 @@ public:
+      * @brief This hook runs after all scripts loading and before itialized
+      */
+     virtual void OnBeforeWorldInitialized() { }
++
++    /**
++     * @brief This hook runs at startup right after item templates (and item set names) load, before anything
++     * loads item instances (auctions, guilds, mail, characters). A module that builds item templates at runtime
++     * loads them here; see ObjectMgr::SetGeneratedItemTemplateLookup.
++     */
++    virtual void OnAfterItemTemplatesLoad() { }
+ };
+ 
+ #endif
+diff --git a/src/server/game/Scripting/ScriptMgr.h b/src/server/game/Scripting/ScriptMgr.h
+index 7f0f30d3c..00a3232c7 100644
+--- a/src/server/game/Scripting/ScriptMgr.h
++++ b/src/server/game/Scripting/ScriptMgr.h
+@@ -177,6 +177,7 @@ public: /* WorldScript */
+     void OnStartup();
+     void OnShutdown();
+     void OnBeforeWorldInitialized();
++    void OnAfterItemTemplatesLoad();
+     void OnAfterUnloadAllMaps();
+ 
+ public: /* FormulaScript */
+diff --git a/src/server/game/Spells/Auras/SpellAuraEffects.cpp b/src/server/game/Spells/Auras/SpellAuraEffects.cpp
+index f6ad1b90b..ed3332d29 100644
+--- a/src/server/game/Spells/Auras/SpellAuraEffects.cpp
++++ b/src/server/game/Spells/Auras/SpellAuraEffects.cpp
+@@ -455,6 +455,10 @@ int32 AuraEffect::CalculateAmount(Unit* caster)
+     // default amount calculation
+     amount = m_spellInfo->Effects[m_effIndex].CalcValue(caster, &m_baseAmount, nullptr);
+ 
++    // wowproject: a talent's own aura works at the talent's bonus ranks (Player::SetTalentRankBonus)
++    if (caster && caster->IsPlayer() && GetBase()->GetOwner() == caster)
++        amount = caster->ToPlayer()->GetTalentBonusAmount(m_spellInfo, m_effIndex, amount);
++
+     // check item enchant aura cast
+     if (!amount && caster)
+         if (ObjectGuid itemGUID = GetBase()->GetCastItemGUID())
+diff --git a/src/server/game/Spells/Auras/SpellAuras.cpp b/src/server/game/Spells/Auras/SpellAuras.cpp
+index c309ee315..f41004de2 100644
+--- a/src/server/game/Spells/Auras/SpellAuras.cpp
++++ b/src/server/game/Spells/Auras/SpellAuras.cpp
+@@ -2402,6 +2402,9 @@ float Aura::CalcProcChance(SpellProcEntry const& procEntry, ProcEventInfo& event
+             }
+             chance = caster->GetPPMProcChance(attackSpeed, procEntry.ProcsPerMinute, GetSpellInfo());
+         }
++        // wowproject: a talent's own proc chance at the talent's bonus ranks (Player::SetTalentRankBonus)
++        else if (!procEntry.ProcsPerMinute && caster->IsPlayer() && GetOwner() == caster)
++            chance = caster->ToPlayer()->GetTalentBonusProcChance(GetSpellInfo(), chance);
+         // apply chance modifer aura, applies also to ppm chance (see improved judgement of light spell)
+         if (Player* modOwner = caster->GetSpellModOwner())
+             modOwner->ApplySpellMod(GetId(), SPELLMOD_CHANCE_OF_SUCCESS, chance);
+diff --git a/src/server/game/World/World.cpp b/src/server/game/World/World.cpp
+index a001fcaf3..d35ce090a 100644
+--- a/src/server/game/World/World.cpp
++++ b/src/server/game/World/World.cpp
+@@ -532,6 +532,10 @@ void World::SetInitialWorldSettings()
+     LOG_INFO("server.loading", "Loading Item Set Names...");                // must be after LoadItemPrototypes
+     sObjectMgr->LoadItemSetNames();
+ 
++    // Runtime item templates (e.g. mod-forge): before auctions, guilds and logins, which delete items whose
++    // template is missing.
++    sScriptMgr->OnAfterItemTemplatesLoad();
++
+     LOG_INFO("server.loading", "Loading Creature Model Based Info Data...");
+     sObjectMgr->LoadCreatureModelInfo();
+ 
+-- 
+2.43.0
+

@@ -22,7 +22,7 @@
 // Crafting orbs (wowproject docs/forge-currency.md). Each orb is an item whose "Use:" spell is a copy of a stock
 // enchanting-scroll spell (item-target cursor, enchant sparkle) with enchant 0: the stock effect does nothing, so
 // spell_forge_orb does the work, by the orb's kind in forge_currency. Items, spells and forge_currency rows are
-// generated from wowproject tools/client-patch/forge-currency.json (client patch and
+// generated from tools/client-patch/forge-currency.json (client patch and
 // sql/world/2026_10_21_01_forge_currency.sql).
 
 namespace

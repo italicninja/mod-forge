@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.MPQ
+addon/*.zip
+ForgeTalents.zip

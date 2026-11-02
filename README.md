@@ -10,6 +10,8 @@ Every eligible drop is forged into a one-of-a-kind item, with its own name, stat
 ![Client](https://img.shields.io/badge/client-12340-555)
 ![License](https://img.shields.io/badge/license-GPL--2.0-green)
 
+By [Italicninja](https://github.com/italicninja) · GPL-2.0
+
 <img src="docs/images/loot-hero.png" alt="Three generated items: a green sword with a shadow-bolt proc, blue leggings, and the Unique Hogger's Gnawbone" width="900">
 
 </div>
@@ -129,8 +131,9 @@ Two items for the same talent stack.
   user, a quest reward's player, the GM. Together a class's talent affixes weigh `Forge.TalentAffixes.Weight` (30,
   about 2% of suffix rolls) and take the item's name. Each unlocks at the item level its tree row opens (10 + 5 per
   row).
-- **Core:** the commit "Talent rank bonuses" in our fork (`Player::SetTalentRankBonus`, `PlayerTalentBonus.cpp`).
-  Without it this module doesn't build; the feature itself stays off until enabled.
+- **Core:** `Player::SetTalentRankBonus` (`PlayerTalentBonus.cpp`), from the core patch in
+  [`patches/`](patches/azerothcore-forge-hooks.patch). The module needs the patch to build either way; the feature
+  stays off until enabled.
 - **Tooltip:** the item's description line reads "+1 to Improved Fireball (Mage)".
 
 ### ForgeTalents addon (client)
@@ -168,18 +171,77 @@ flowchart LR
 - **Persistent.** The rolls are stored in the characters DB and rebuilt at startup, before auctions, guilds and
   logins load any items.
 
+## Requirements
+
+- AzerothCore 3.3.5a (client build 12340), built from source with modules static (`-DMODULES=static`).
+- **A small core patch**, [`patches/azerothcore-forge-hooks.patch`](patches/azerothcore-forge-hooks.patch)
+  (13 files, ~290 lines, no behaviour change without the module). It adds:
+  - a runtime item-template lookup: `ObjectMgr::SetGeneratedItemTemplateLookup` and `IsGeneratedItem`;
+  - the `WorldScript::OnAfterItemTemplatesLoad` hook, called after item templates load and before auctions,
+    guilds, mail and logins load items;
+  - two null checks, for a generated entry that has been recycled (`Player::_SaveInventory`, the loot packet);
+  - talent rank bonuses (`Player::SetTalentRankBonus`) for talent affixes.
+
+  It applies cleanly to [azerothcore/azerothcore-wotlk](https://github.com/azerothcore/azerothcore-wotlk) `master`
+  and to the [mod-playerbots](https://github.com/mod-playerbots/azerothcore-wotlk) `Playerbot` branch, as of
+  2026-11-02. The module is developed and run on the `Playerbot` branch.
+- Python 3 (standard library only) to build the client patch.
+- Players need the client patch (`patch-enUS-4.MPQ`) built in step 4. Without it, generated items show no icon
+  or model and can't be equipped.
+
 ## Install
 
-1. Clone into `azerothcore-wotlk/modules/mod-forge`.
-2. Build against a core with the generated-item hooks: our fork `italicninja/azerothcore-wotlk`, branch
-   `wowproject`, has them as the commit "Generated items: runtime item templates and a load hook" (aad641bd6). It adds
-   the runtime item-template lookup (`ObjectMgr::SetGeneratedItemTemplateLookup`, `IsGeneratedItem`), the
-   `WorldScript::OnAfterItemTemplatesLoad` hook and two null checks; cherry-pick it onto another playerbots core.
-3. Apply the SQL by hand: `sql/characters/` into `acore_characters`, then `sql/world/` into `acore_world` (see
-   `sql/README.md`).
-4. Re-run CMake, build, and copy `conf/mod_forge.conf.dist` to `etc/modules/mod_forge.conf`.
-5. Hand players the client patch built from the same `pools.tsv` and `forge-currency.json` as the SQL (it carries
-   the pools' Item.dbc rows, and the orbs' items and Use: spells).
+1. **Module.** Clone into the core's modules folder:
+   ```sh
+   cd azerothcore-wotlk/modules
+   git clone https://github.com/italicninja/mod-forge.git
+   ```
+2. **Core patch.** From the core's root:
+   ```sh
+   git apply modules/mod-forge/patches/azerothcore-forge-hooks.patch
+   ```
+   (or `git am` it to keep it as a commit). Then re-run CMake and build as usual.
+3. **SQL**, by hand (the core's DB updater doesn't pick it up): every file in `sql/characters/` into
+   `acore_characters`, then every file in `sql/world/` into `acore_world`, each in file-name order. See
+   [`sql/README.md`](sql/README.md).
+   ```sh
+   for f in modules/mod-forge/sql/characters/*.sql; do mysql acore_characters < "$f"; done
+   for f in modules/mod-forge/sql/world/*.sql; do mysql acore_world < "$f"; done
+   ```
+4. **Client patch.** Build it from your server's extracted DBCs (the `dbc/` folder the map extractor wrote):
+   ```sh
+   cd modules/mod-forge
+   python3 tools/client-patch/build-patch.py --dbc-dir /path/to/server/data/dbc \
+     --pools tools/item-affixes/pools.tsv --currency tools/client-patch/forge-currency.json \
+     --out patch-enUS-4.MPQ
+   ```
+   It adds the generated-item pools' Item.dbc rows (~728,000) and the crafting orbs' items and Use: spells, about
+   74 MB. Players put it in the client's `Data/enUS/` (or their locale's folder, renamed to match) and clear
+   `Cache/`. If `patch-enUS-4.MPQ` is already taken by another patch, use the next free number; the highest
+   number wins.
+5. **Config.** Copy `conf/mod_forge.conf.dist` to your `etc/modules/mod_forge.conf` and adjust (see below).
+6. **Optional:** players who want talent bonuses shown in the talent window install the
+   [ForgeTalents addon](#forgetalents-addon-client).
+
+Start the worldserver; at startup it logs `>> Loaded N item affixes, N entry pools, ...`. Try
+`.forge roll 13114` as a GM.
+
+### Regenerating the data
+
+The SQL and the client patch must come from the same `pools.tsv`, or generated items get the wrong model or
+can't be equipped. The shipped files already match; regenerate only if you change affixes or eligible bases:
+
+```sh
+MYSQL="mysql -uacore -p..." tools/item-affixes/fetch-bases.sh > /tmp/bases.tsv
+tools/item-affixes/gen.py affixes > sql/world/2026_10_13_01_item_affix_data.sql
+tools/item-affixes/gen.py pools /tmp/bases.tsv tools/item-affixes/pools.tsv > sql/world/2026_10_13_02_item_affix_pool.sql
+tools/item-affixes/talents.py /path/to/server/data/dbc > sql/world/2026_10_22_02_item_affix_talents.sql
+tools/client-patch/build-patch.py --dbc-dir /path/to/server/data/dbc --pools tools/item-affixes/pools.tsv \
+  --currency tools/client-patch/forge-currency.json --sql sql/world/2026_10_21_01_forge_currency.sql \
+  --out patch-enUS-4.MPQ
+```
+
+Then apply the changed SQL, restart, and hand players the new MPQ.
 
 ## Configuration
 
@@ -224,16 +286,20 @@ Log channel: `module.forge`.
 
 `src/ForgeMgr.h` is the API. `sForgeMgr->Generate()` rolls an item, `CreatePreview()` makes a reward preview, and
 `SendTemplate()` pushes a template to a client. mod-procedurality rolls its Wanted rewards with it. Code that only
-needs to know whether an entry is generated should call core's `ObjectMgr::IsGeneratedItem`, as mod-playerbots does
-to keep bots' forged gear.
+needs to know whether an entry is generated should call core's `ObjectMgr::IsGeneratedItem`, as our bots do to keep
+their forged gear.
 
 ## Status
 
 Extracted on 2026-10-20 from the wowproject core patches `0001-item-affixes` and `0006-item-affix-spells`, where
-the code ran live from 2026-10-13. Live as a module since 2026-10-21 on the wowproject realm. The design docs (`docs/loot-affixes.md`,
-`docs/loot-vanilla-plan.md`, `docs/uniques-draft.md`) and the data generators (`tools/item-affixes/`,
-`tools/client-patch/`) live in the wowproject repo for now.
+the code ran live from 2026-10-13. Live as a module since 2026-10-21 on the wowproject realm, a private
+AzerothCore + playerbots server.
+
+## Credits
+
+Author: [Italicninja](https://github.com/italicninja). Inspired by Path of Exile's item and currency system
+(Grinding Gear Games); no assets or data from it are used.
 
 ## License
 
-GPL-2.0, like AzerothCore. See `LICENSE`.
+GPL-2.0, like AzerothCore. See [`LICENSE`](LICENSE).

@@ -1,0 +1,234 @@
+ID	int
+Category	int unsigned
+DispelType	int unsigned
+Mechanic	int unsigned
+Attributes	int unsigned
+AttributesEx	int unsigned
+AttributesEx2	int unsigned
+AttributesEx3	int unsigned
+AttributesEx4	int unsigned
+AttributesEx5	int unsigned
+AttributesEx6	int unsigned
+AttributesEx7	int unsigned
+ShapeshiftMask	bigint unsigned
+unk_320_2	int
+ShapeshiftExclude	bigint unsigned
+unk_320_3	int
+Targets	int unsigned
+TargetCreatureType	int unsigned
+RequiresSpellFocus	int unsigned
+FacingCasterFlags	int unsigned
+CasterAuraState	int unsigned
+TargetAuraState	int unsigned
+ExcludeCasterAuraState	int unsigned
+ExcludeTargetAuraState	int unsigned
+CasterAuraSpell	int unsigned
+TargetAuraSpell	int unsigned
+ExcludeCasterAuraSpell	int unsigned
+ExcludeTargetAuraSpell	int unsigned
+CastingTimeIndex	int unsigned
+RecoveryTime	int unsigned
+CategoryRecoveryTime	int unsigned
+InterruptFlags	int unsigned
+AuraInterruptFlags	int unsigned
+ChannelInterruptFlags	int unsigned
+ProcTypeMask	int unsigned
+ProcChance	int unsigned
+ProcCharges	int unsigned
+MaxLevel	int unsigned
+BaseLevel	int unsigned
+SpellLevel	int unsigned
+DurationIndex	int unsigned
+PowerType	int
+ManaCost	int unsigned
+ManaCostPerLevel	int unsigned
+ManaPerSecond	int unsigned
+ManaPerSecondPerLevel	int unsigned
+RangeIndex	int unsigned
+Speed	float
+ModalNextSpell	int unsigned
+CumulativeAura	int unsigned
+Totem_1	int unsigned
+Totem_2	int unsigned
+Reagent_1	int
+Reagent_2	int
+Reagent_3	int
+Reagent_4	int
+Reagent_5	int
+Reagent_6	int
+Reagent_7	int
+Reagent_8	int
+ReagentCount_1	int
+ReagentCount_2	int
+ReagentCount_3	int
+ReagentCount_4	int
+ReagentCount_5	int
+ReagentCount_6	int
+ReagentCount_7	int
+ReagentCount_8	int
+EquippedItemClass	int
+EquippedItemSubclass	int
+EquippedItemInvTypes	int
+Effect_1	int unsigned
+Effect_2	int unsigned
+Effect_3	int unsigned
+EffectDieSides_1	int
+EffectDieSides_2	int
+EffectDieSides_3	int
+EffectRealPointsPerLevel_1	float
+EffectRealPointsPerLevel_2	float
+EffectRealPointsPerLevel_3	float
+EffectBasePoints_1	int
+EffectBasePoints_2	int
+EffectBasePoints_3	int
+EffectMechanic_1	int unsigned
+EffectMechanic_2	int unsigned
+EffectMechanic_3	int unsigned
+ImplicitTargetA_1	int unsigned
+ImplicitTargetA_2	int unsigned
+ImplicitTargetA_3	int unsigned
+ImplicitTargetB_1	int unsigned
+ImplicitTargetB_2	int unsigned
+ImplicitTargetB_3	int unsigned
+EffectRadiusIndex_1	int unsigned
+EffectRadiusIndex_2	int unsigned
+EffectRadiusIndex_3	int unsigned
+EffectAura_1	int unsigned
+EffectAura_2	int unsigned
+EffectAura_3	int unsigned
+EffectAuraPeriod_1	int unsigned
+EffectAuraPeriod_2	int unsigned
+EffectAuraPeriod_3	int unsigned
+EffectMultipleValue_1	float
+EffectMultipleValue_2	float
+EffectMultipleValue_3	float
+EffectChainTargets_1	int unsigned
+EffectChainTargets_2	int unsigned
+EffectChainTargets_3	int unsigned
+EffectItemType_1	int unsigned
+EffectItemType_2	int unsigned
+EffectItemType_3	int unsigned
+EffectMiscValue_1	int
+EffectMiscValue_2	int
+EffectMiscValue_3	int
+EffectMiscValueB_1	int
+EffectMiscValueB_2	int
+EffectMiscValueB_3	int
+EffectTriggerSpell_1	int unsigned
+EffectTriggerSpell_2	int unsigned
+EffectTriggerSpell_3	int unsigned
+EffectPointsPerCombo_1	float
+EffectPointsPerCombo_2	float
+EffectPointsPerCombo_3	float
+EffectSpellClassMaskA_1	int unsigned
+EffectSpellClassMaskA_2	int unsigned
+EffectSpellClassMaskA_3	int unsigned
+EffectSpellClassMaskB_1	int unsigned
+EffectSpellClassMaskB_2	int unsigned
+EffectSpellClassMaskB_3	int unsigned
+EffectSpellClassMaskC_1	int unsigned
+EffectSpellClassMaskC_2	int unsigned
+EffectSpellClassMaskC_3	int unsigned
+SpellVisualID_1	int unsigned
+SpellVisualID_2	int unsigned
+SpellIconID	int unsigned
+ActiveIconID	int unsigned
+SpellPriority	int unsigned
+Name_Lang_enUS	varchar(100)
+Name_Lang_enGB	varchar(100)
+Name_Lang_koKR	varchar(100)
+Name_Lang_frFR	varchar(100)
+Name_Lang_deDE	varchar(100)
+Name_Lang_enCN	varchar(100)
+Name_Lang_zhCN	varchar(100)
+Name_Lang_enTW	varchar(100)
+Name_Lang_zhTW	varchar(100)
+Name_Lang_esES	varchar(100)
+Name_Lang_esMX	varchar(100)
+Name_Lang_ruRU	varchar(100)
+Name_Lang_ptPT	varchar(100)
+Name_Lang_ptBR	varchar(100)
+Name_Lang_itIT	varchar(100)
+Name_Lang_Unk	varchar(100)
+Name_Lang_Mask	int unsigned
+NameSubtext_Lang_enUS	varchar(100)
+NameSubtext_Lang_enGB	varchar(100)
+NameSubtext_Lang_koKR	varchar(100)
+NameSubtext_Lang_frFR	varchar(100)
+NameSubtext_Lang_deDE	varchar(100)
+NameSubtext_Lang_enCN	varchar(100)
+NameSubtext_Lang_zhCN	varchar(100)
+NameSubtext_Lang_enTW	varchar(100)
+NameSubtext_Lang_zhTW	varchar(100)
+NameSubtext_Lang_esES	varchar(100)
+NameSubtext_Lang_esMX	varchar(100)
+NameSubtext_Lang_ruRU	varchar(100)
+NameSubtext_Lang_ptPT	varchar(100)
+NameSubtext_Lang_ptBR	varchar(100)
+NameSubtext_Lang_itIT	varchar(100)
+NameSubtext_Lang_Unk	varchar(100)
+NameSubtext_Lang_Mask	int unsigned
+Description_Lang_enUS	text
+Description_Lang_enGB	text
+Description_Lang_koKR	text
+Description_Lang_frFR	text
+Description_Lang_deDE	text
+Description_Lang_enCN	text
+Description_Lang_zhCN	text
+Description_Lang_enTW	text
+Description_Lang_zhTW	text
+Description_Lang_esES	text
+Description_Lang_esMX	text
+Description_Lang_ruRU	text
+Description_Lang_ptPT	text
+Description_Lang_ptBR	text
+Description_Lang_itIT	text
+Description_Lang_Unk	text
+Description_Lang_Mask	int unsigned
+AuraDescription_Lang_enUS	varchar(550)
+AuraDescription_Lang_enGB	varchar(550)
+AuraDescription_Lang_koKR	varchar(550)
+AuraDescription_Lang_frFR	varchar(550)
+AuraDescription_Lang_deDE	varchar(550)
+AuraDescription_Lang_enCN	varchar(550)
+AuraDescription_Lang_zhCN	varchar(550)
+AuraDescription_Lang_enTW	varchar(550)
+AuraDescription_Lang_zhTW	varchar(550)
+AuraDescription_Lang_esES	varchar(550)
+AuraDescription_Lang_esMX	varchar(550)
+AuraDescription_Lang_ruRU	varchar(550)
+AuraDescription_Lang_ptPT	varchar(550)
+AuraDescription_Lang_ptBR	varchar(550)
+AuraDescription_Lang_itIT	varchar(550)
+AuraDescription_Lang_Unk	varchar(100)
+AuraDescription_Lang_Mask	int unsigned
+ManaCostPct	int unsigned
+StartRecoveryCategory	int unsigned
+StartRecoveryTime	int unsigned
+MaxTargetLevel	int unsigned
+SpellClassSet	int unsigned
+SpellClassMask_1	int unsigned
+SpellClassMask_2	int unsigned
+SpellClassMask_3	int unsigned
+MaxTargets	int unsigned
+DefenseType	int unsigned
+PreventionType	int unsigned
+StanceBarOrder	int unsigned
+EffectChainAmplitude_1	float
+EffectChainAmplitude_2	float
+EffectChainAmplitude_3	float
+MinFactionID	int unsigned
+MinReputation	int unsigned
+RequiredAuraVision	int unsigned
+RequiredTotemCategoryID_1	int unsigned
+RequiredTotemCategoryID_2	int unsigned
+RequiredAreasID	int
+SchoolMask	int unsigned
+RuneCostID	int unsigned
+SpellMissileID	int unsigned
+PowerDisplayID	int
+EffectBonusMultiplier_1	float
+EffectBonusMultiplier_2	float
+EffectBonusMultiplier_3	float
+SpellDescriptionVariableID	int unsigned
+SpellDifficultyID	int unsigned
