@@ -5,12 +5,11 @@
 #
 #   MYSQL="mysql -h127.0.0.1 -uacore -pacore" tools/item-affixes/fetch-bases.sh > bases.tsv
 #
-# MYSQL is the client command without a database name (default: mysql, with your ~/.my.cnf);
-# WORLD_DB the world database (default: acore_world).
+# MYSQL is the client command without a database name, as shell words (default: mysql, with your ~/.my.cnf);
+# WORLD_DB the world database (default: acore_world). The database name is appended to MYSQL.
 set -euo pipefail
 QUALITIES=${QUALITIES:-0,1,2,3,4}
-read -r -a MYSQL_CMD <<<"${MYSQL:-mysql}"
-"${MYSQL_CMD[@]}" -B "${WORLD_DB:-acore_world}" <<SQL
+eval "${MYSQL:-mysql} -B ${WORLD_DB:-acore_world}" <<SQL
 SELECT entry, class, subclass, SoundOverrideSubclass, Material, displayid, InventoryType, sheath
 FROM item_template
 WHERE entry < 1000000 AND Quality IN ($QUALITIES) AND bonding NOT IN (1, 4, 5) AND itemset = 0 AND startquest = 0
